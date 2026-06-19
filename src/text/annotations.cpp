@@ -29,8 +29,8 @@ constexpr Color kLineColor{0.85f, 0.86f, 0.92f, 1.0f};
 constexpr Color kLabelColor{1.0f, 1.0f, 1.0f, 1.0f};
 constexpr float kTickMajorLen = 0.045f;
 constexpr float kTickMinorLen = 0.024f;
-constexpr float kTickLabelMargin = 12.0f;
-constexpr float kAxisLabelMargin = 40.0f;
+constexpr float kTickLabelMargin = 24.0f; // px outward from the tick (clears the tick mark)
+constexpr float kAxisLabelMargin = 54.0f; // px outward (beyond the tick labels)
 
 Vec3 add(const Vec3& a, const Vec3& b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
 Vec3 scale(const Vec3& a, float s) { return {a[0] * s, a[1] * s, a[2] * s}; }

@@ -10,6 +10,27 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0040 — Anti-aliased overlay lines via VK_EXT_line_rasterization (smooth)
+- **Date / milestone:** 2026-06-19 / post-M7 graphics polish
+- **Choice:** How to eliminate aliasing on the overlay's box/axis/tick lines (the
+  maintainer flagged them as jagged) without an MSAA pipeline.
+- **Decision:** `Context::create` **opportunistically** enables
+  **`VK_EXT_line_rasterization`** + the **`smoothLines`** feature when the device
+  supports it (both the RTX 4070 and llvmpipe here do), exposed via
+  `Context::smoothLinesAvailable()`. The renderer then builds the overlay **line**
+  pipeline with `lineRasterizationMode = eRectangularSmooth` (coverage→alpha,
+  composited by the existing alpha blend); triangles/glyphs already AA (fill / Slug
+  coverage). **Graceful fallback** to aliased lines when unavailable — no public API
+  change, no MSAA, no perf cost on the volume.
+- **Rationale:** Targeted, device-agnostic line AA; avoids the architectural cost of an
+  MSAA color attachment + resolve over the single-sample compute output (which would
+  also break the pixel-exact renderer tests and the ADR-0019 perf contract). A Vulkan
+  device extension is part of the already-sanctioned Vulkan dependency (ADR-0001), so
+  no new-dependency ADR; it preserves ADR-0021's overlay contract (refinement only).
+- **Contract impact:** none (internal quality refinement; ADR-0021/0026 preserved).
+- **Deferred alternatives:** MSAA / supersampling (heavier, breaks pixel tests + perf);
+  hand-rolled AA-line quads (more code).
+
 ### D-0039 — M7 scene annotations: projection, outer-edge labels, through-axes
 - **Date / milestone:** 2026-06-19 / M7 (CONTRACT) — maintainer-approved
 - **Choice:** How the box/axes/ticks/labels are placed and which box edges carry

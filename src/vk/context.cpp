@@ -273,20 +273,41 @@ Result<Context> Context::create(const ContextConfig& config) {
     const vkh::PhysicalDevice phys = devices[*chosen];
     const std::uint32_t family = *graphicsFamily(phys);
 
-    // 5. Logical device with one graphics queue.
+    // 5. Logical device with one graphics queue. Opportunistically enable
+    // VK_EXT_line_rasterization + the smoothLines feature for anti-aliased overlay
+    // lines (ADR-0026 line-quality refinement); fall back to aliased lines when the
+    // extension/feature is unavailable.
     const float priority = 1.0f;
     const auto queueInfo = vkh::DeviceQueueCreateInfo{}
                                .setQueueFamilyIndex(family)
                                .setQueuePriorities(priority);
-    const auto deviceInfo = vkh::DeviceCreateInfo{}
-                                .setQueueCreateInfos(queueInfo)
-                                .setPEnabledExtensionNames(config.deviceExtensions);
+
+    std::vector<const char*> deviceExts(config.deviceExtensions.begin(),
+                                        config.deviceExtensions.end());
+    bool smoothLines = false;
+    if (supportsDeviceExtensions(phys, std::vector<const char*>{"VK_EXT_line_rasterization"})) {
+        const auto features = phys.getFeatures2<vkh::PhysicalDeviceFeatures2,
+                                                vkh::PhysicalDeviceLineRasterizationFeaturesEXT>();
+        smoothLines = static_cast<bool>(
+            features.get<vkh::PhysicalDeviceLineRasterizationFeaturesEXT>().smoothLines);
+    }
+    if (smoothLines) {
+        deviceExts.push_back("VK_EXT_line_rasterization");
+    }
+    auto lineFeatures = vkh::PhysicalDeviceLineRasterizationFeaturesEXT{}.setSmoothLines(VK_TRUE);
+    auto deviceInfo = vkh::DeviceCreateInfo{}
+                          .setQueueCreateInfos(queueInfo)
+                          .setPEnabledExtensionNames(deviceExts);
+    if (smoothLines) {
+        deviceInfo.setPNext(&lineFeatures);
+    }
     auto deviceR = take(phys.createDevice(deviceInfo), "createDevice");
     if (!deviceR) {
         return std::unexpected(std::move(deviceR).error());
     }
     const vkh::Device device = *deviceR;
     ctx.device_ = Unique<vkh::Device>(device, [](vkh::Device d) { d.destroy(); });
+    ctx.smoothLines_ = smoothLines;
 
     const vkh::Queue queue = device.getQueue(family, 0);
 

@@ -60,6 +60,12 @@ public:
     }
     [[nodiscard]] bool validationClean() const noexcept { return validationMessageCount() == 0u; }
 
+    // True when VK_EXT_line_rasterization + the smoothLines feature were available and
+    // enabled at device creation, so the renderer can use anti-aliased (smooth) line
+    // rasterization for the overlay (ADR-0021/0026). Opportunistic: falls back to
+    // aliased lines when unsupported.
+    [[nodiscard]] bool smoothLinesAvailable() const noexcept { return smoothLines_; }
+
     // Shared handle to the validation counter so a test can observe teardown-time
     // validation: the instance's pNext debug messenger reports undestroyed
     // objects during vkDestroyInstance, after this Context is gone. Null when
@@ -87,6 +93,7 @@ private:
     ::vk::PhysicalDevice physicalDevice_{};
     ::vk::Queue queue_{};
     std::uint32_t queueFamilyIndex_{0};
+    bool smoothLines_{false};
     std::thread::id ownerThread_{};
 };
 

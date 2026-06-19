@@ -156,6 +156,7 @@ void Renderer::checkAffinity() const noexcept {
 Result<Renderer> Renderer::create(const Context& ctx) {
     const vkh::Device device = ctx.device();
     const vkh::PhysicalDevice phys = ctx.physicalDevice();
+    const bool smoothLines = ctx.smoothLinesAvailable(); // anti-aliased overlay lines (ADR-0026)
 
     Renderer r;
     r.device_ = device;
@@ -490,19 +491,31 @@ Result<Renderer> Renderer::create(const Context& ctx) {
                                                          vkh::DynamicState::eScissor};
         const auto dyn = vkh::PipelineDynamicStateCreateInfo{}.setDynamicStates(dynStates);
 
+        // The line pipeline uses anti-aliased (smooth) rasterization when the device
+        // supports it (ADR-0026); triangles stay default. Smooth lines emit coverage as
+        // alpha, composited by the existing alpha blend.
+        const auto lineState = vkh::PipelineRasterizationLineStateCreateInfoEXT{}.setLineRasterizationMode(
+            vkh::LineRasterizationModeEXT::eRectangularSmooth);
+        auto rsLine = rs;
+        if (smoothLines) {
+            rsLine.setPNext(&lineState);
+        }
+
         const std::array<vkh::PrimitiveTopology, 2> topos{vkh::PrimitiveTopology::eLineList,
                                                          vkh::PrimitiveTopology::eTriangleList};
         const std::array<Unique<vkh::Pipeline>*, 2> targets{&r.overlayLinePipeline_,
                                                            &r.overlayTrianglePipeline_};
         for (std::size_t i = 0; i < topos.size(); ++i) {
             const auto ia = vkh::PipelineInputAssemblyStateCreateInfo{}.setTopology(topos[i]);
+            const vkh::PipelineRasterizationStateCreateInfo* rasterState =
+                (i == 0) ? &rsLine : &rs; // i==0 is the line list
             auto pipe = take(device.createGraphicsPipeline(
                                  {}, vkh::GraphicsPipelineCreateInfo{}
                                          .setStages(stages)
                                          .setPVertexInputState(&vinput)
                                          .setPInputAssemblyState(&ia)
                                          .setPViewportState(&vp)
-                                         .setPRasterizationState(&rs)
+                                         .setPRasterizationState(rasterState)
                                          .setPMultisampleState(&ms)
                                          .setPColorBlendState(&cb)
                                          .setPDynamicState(&dyn)

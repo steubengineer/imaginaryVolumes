@@ -21,7 +21,7 @@ enum class Dim { X, Y, Z };
 
 // Default tick targets when an axis does not override them.
 inline constexpr int kDefaultMajor = 5;          // target number of major ticks
-inline constexpr int kDefaultMinorPerMajor = 5;  // minor subdivisions per major interval
+inline constexpr int kDefaultMinorPerMajor = 2;  // 1 minor tick between majors (2 subdivisions)
 
 // One axis of the plot. The data coordinate is `min` at world 0 and `max` at world 1
 // (a reversed axis with min > max is allowed). `unit` is optional; the rendered axis

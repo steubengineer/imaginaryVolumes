@@ -12,6 +12,13 @@ add_executable(iv_tests
     test_concurrency.cpp)
 target_link_libraries(iv_tests PRIVATE iv iv_warnings catch2_amalgamated)
 
+# Text shaping tests (ADR-0022), only when text is built. The rest of the suite
+# stays buildable with IV_BUILD_TEXT=OFF (the text-free isolation gate).
+if(IV_BUILD_TEXT)
+    target_sources(iv_tests PRIVATE test_text_shaper.cpp)
+    target_link_libraries(iv_tests PRIVATE iv_text)
+endif()
+
 add_test(NAME iv_tests COMMAND iv_tests)
 # The Vulkan loader + validation layer make process-exit allocations that never
 # free and do not symbolize (not our objects; ADR-0005's validation layer is our

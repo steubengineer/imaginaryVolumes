@@ -10,6 +10,37 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0035 — M6 HarfBuzz acquisition: concrete pin, vendored shape, bundled face
+- **Date / milestone:** 2026-06-19 / M6 (IMPLEMENT, ADR-0022)
+- **Choice:** The concrete facts ADR-0022 deferred "to acceptance": which commit,
+  which files, which font face, and how the default font is delivered.
+- **Decision:**
+  - **Pin:** HarfBuzz `main` @ **`ac0979b6f44b41894c73fd208a0b4f5a8c6dc6ff`**
+    (2026-06-18). A commit, not a tag, because `libharfbuzz-gpu` (the Slug renderer,
+    D-0034) exists **only on `main`** — no tagged release ships it yet.
+  - **Vendored shape:** a near-verbatim mirror of upstream `src/` (auditable by
+    `diff -r`), excluding only non-compiled extras — `*.py` generators, the
+    `wasm/`/`rust/`/`ms-use/` integration dirs, and the raw non-GLSL GPU shader
+    sources. The kept set is exactly the transitive compile closure of
+    `src/harfbuzz.cc` + `src/hb-gpu*.cc`, verified to build with our GCC at C++23.
+    Dropping `ms-use/` also keeps the drop single-licensed (top-level Old MIT only).
+  - **Build:** one static lib `harfbuzz_core` from the amalgamated `src/harfbuzz.cc`,
+    **no `HAVE_*` defines** (built-in OpenType + UCD; no ICU/GLib/Cairo/FreeType),
+    `SYSTEM` includes, not under `-Werror`. Gated by `IV_BUILD_TEXT` (default ON);
+    `OFF` is the text-free isolation gate (mirrors `IV_BUILD_VIEWER`).
+  - **Font:** bundle **`NewCM10-Book.otf`** (NCM 8.1.0, the GFL Roman "Book" weight —
+    the package default; ~0.68 MB), **embedded** as a byte array
+    (`tools/embed_bytes.cmake` → `iv::text::bundledFont()`) so the default face needs
+    no runtime path. The canonical **GUST Font License** text (absent from the NCM
+    package, which ships only the GPL3 text for its GPL subset) was fetched from the
+    GUST e-foundry and bundled. The GPL3+FE+DE subset is excluded.
+- **Rationale:** Pinning a `main` commit is the only way to get the experimental GPU
+  API while staying reproducible (D-0033/D-0034). Embedding the face matches the
+  project's no-runtime-asset convention (shaders, colormap LUT).
+- **Contract impact:** Implements ADR-0022 (no new public contract beyond it).
+- **Provenance recorded in:** `third_party/harfbuzz/VENDORING.md`,
+  `third_party/fonts/README.md`.
+
 ### D-0034 — M6 GPU glyph rendering: libharfbuzz-gpu (Slug)
 - **Date / milestone:** 2026-06-19 / M6 (CONTRACT) — maintainer decision
 - **Choice:** How shaped glyphs are rendered crisply on the GPU.

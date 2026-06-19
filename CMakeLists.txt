@@ -110,6 +110,35 @@ iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/ray_march.comp ray_march_com
 iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/overlay.vert overlay_vert)
 iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/overlay.frag overlay_frag)
 
+# --- Text shaping (ADR-0022): vendored HarfBuzz + iv::text::Shaper, gated. ---
+# Text lives in the annotation layer, not core `iv`: with IV_BUILD_TEXT=OFF the
+# core library, tests, and tools build with NO HarfBuzz present (the text-free
+# isolation gate, mirroring IV_BUILD_VIEWER). Default ON.
+option(IV_BUILD_TEXT "Build text shaping (vendored HarfBuzz) and the bundled font" ON)
+if(IV_BUILD_TEXT)
+    add_subdirectory(third_party/harfbuzz)
+
+    # Embed the bundled default face (third_party/fonts) as a byte array so the
+    # default font needs no runtime file path (ADR-0022; same pattern as shaders).
+    set(IV_FONT_SRC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/NewCM10-Book.otf)
+    set(IV_FONT_GEN ${CMAKE_CURRENT_BINARY_DIR}/ncm_book_otf.cpp)
+    add_custom_command(
+        OUTPUT ${IV_FONT_GEN}
+        COMMAND ${CMAKE_COMMAND} -DIN=${IV_FONT_SRC} -DSYMBOL=ncm_book_otf
+                -DNS=iv::text -DHDR=iv/text/bundled_font.hpp -DOUT=${IV_FONT_GEN}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bytes.cmake
+        DEPENDS ${IV_FONT_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bytes.cmake
+        COMMENT "embed NewCM10-Book.otf"
+        VERBATIM)
+
+    add_library(iv_text STATIC src/text/shaper.cpp src/text/bundled_font.cpp ${IV_FONT_GEN})
+    add_library(iv::text ALIAS iv_text)
+    # iv is PUBLIC: shaper.hpp includes iv/error.hpp. harfbuzz_core is PRIVATE:
+    # HarfBuzz is hidden behind the Shaper (ADR-0004), only shaper.cpp needs it.
+    target_link_libraries(iv_text PUBLIC iv)
+    target_link_libraries(iv_text PRIVATE harfbuzz_core iv_warnings)
+endif()
+
 # --- Tests ---
 include(CTest)
 if(BUILD_TESTING)

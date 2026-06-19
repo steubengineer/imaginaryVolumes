@@ -17,6 +17,11 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo)
 endif()
 
+# --- Vulkan dependency (ADR-0001 pre-authorized; used from M2 / ADR-0004) ---
+# Imported target Vulkan::Vulkan carries the loader + headers; its include dirs
+# are SYSTEM by default, so vulkan.hpp's own diagnostics don't trip -Werror.
+find_package(Vulkan REQUIRED)
+
 # --- Compiler contract: system GCC >= 13 (ADR-0001) ---
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     message(FATAL_ERROR
@@ -51,10 +56,16 @@ endif()
 # --- Library ---
 add_library(iv
     src/error.cpp
-    src/assert.cpp)
+    src/assert.cpp
+    src/vk/result.cpp
+    src/vk/context.cpp
+    src/vk/offscreen.cpp)
 add_library(iv::iv ALIAS iv)
 target_include_directories(iv PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+# Vulkan is PUBLIC: our public headers include <vulkan/vulkan.hpp> via
+# iv/vk/vulkan.hpp, so consumers need its include path and the loader.
+target_link_libraries(iv PUBLIC Vulkan::Vulkan)
 target_link_libraries(iv PRIVATE iv_warnings)
 
 # --- Tests ---

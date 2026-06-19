@@ -61,17 +61,23 @@ renderer headlessly via deterministic pixel readback before the window exists.
   Teeth demonstrated in `CHANGELOG.md` (§ M1).
 
 ## M2 — Vulkan Headless Bring-Up
-- **Status:** Planned
+- **Status:** Complete (2026-06-19) — locked (§2.5).
 - **Goal:** Own the Vulkan boilerplate to stand up a device and render a cleared
   offscreen color image, copy it to host memory, and verify its pixels — no
   window, no swapchain. This proves device/queue/command machinery and gives us
   a deterministic image-readback path that later milestones test against.
 - **Done when:**
-  - [ ] Vulkan instance created; validation layers enabled in debug builds.
-  - [ ] Physical-device selection and logical device + queues + command pool.
-  - [ ] An offscreen color image is cleared to a known color and copied to host.
-  - [ ] A test reads back the image and asserts the pixels equal the clear color.
-  - [ ] Validation layers report no errors across the path.
+  - [x] Vulkan instance created; validation layers enabled in debug builds
+        (best-effort, message-capturing).
+  - [x] Physical-device selection (ranking, accepts software) and logical device
+        + graphics queue + command pool.
+  - [x] An offscreen `R8G8B8A8_UNORM` image is cleared to a known color and copied
+        to host via a staging buffer.
+  - [x] A test reads back the image and asserts every pixel equals the clear
+        color (exact UNORM bytes), plus a varying-data `ImageReadback::at` layout
+        test and a determinism test.
+  - [x] Validation reports no errors across create/use/teardown (pNext messenger
+        gate); verified on the NVIDIA RTX 4070.
 - **Expected ADRs:**
   - Vulkan object ownership & lifetime model (RAII wrappers; who allocates/frees).
   - Device/queue selection contract (how a device is chosen; what is required).
@@ -81,7 +87,10 @@ renderer headlessly via deterministic pixel readback before the window exists.
 - **Tests with teeth:** Readback equals the clear color. Teeth shown by fault
   injection: change the clear color constant (or skip the clear) and the test
   goes red; restore and it greens. Validation-layer cleanliness asserted.
-- **Actual ADRs:** _(filled at completion)_
+- **Actual ADRs:** ADR-0004 (binding & ownership), ADR-0005 (instance/device/
+  queue selection), ADR-0006 (offscreen target & readback), ADR-0007 (concurrency
+  baseline). Supporting decisions: D-0011…D-0016. Teeth demonstrated in
+  `CHANGELOG.md` (§ M2), evidence 1–6.
 
 ## M3 — Volume Data Model & GPU Upload
 - **Status:** Planned

@@ -10,6 +10,46 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0016 — M2 uses core 1.0 pipeline barriers (no synchronization2 feature)
+- **Date / milestone:** 2026-06-19 / M2 (IMPLEMENT)
+- **Choice:** ADR-0006's narrative mentioned synchronization2 barriers, but
+  `vkCmdPipelineBarrier2` requires enabling the `synchronization2` device feature,
+  which conflicts with ADR-0005's "no special features." Use sync2 (enable the
+  feature) or classic core-1.0 `vkCmdPipelineBarrier`?
+- **Decision:** Use classic core-1.0 `vkCmdPipelineBarrier` for M2's layout
+  transitions. No device feature/extension is enabled.
+- **Rationale:** Neither ADR-0005 nor ADR-0006's *binding* Contract Specification
+  mandates sync2 (0006's binding contract is the readback layout/usage/color;
+  "sync2" was narrative). Classic barriers are correct and keep ADR-0005's "no
+  features" intent. Avoids a feature-chain in device creation for no M2 benefit.
+- **Contract impact:** none to either ADR's binding contract; refines ADR-0006's
+  narrative. Journaled here. sync2 can be adopted later under an ADR if a
+  milestone needs it.
+- **Deferred alternatives:** synchronization2 (and dynamic rendering) when M4's
+  pipeline work makes them worthwhile.
+
+### D-0015 — LSan scoping for third-party Vulkan loader/driver leaks
+- **Date / milestone:** 2026-06-19 / M2 (IMPLEMENT)
+- **Choice:** How to keep §7's "sanitizers clean" gate meaningful when the Vulkan
+  loader + validation layer make ~240 process-exit allocations that never free
+  and do not symbolize (identical on NVIDIA and llvmpipe; routed through our
+  `Context::create()` only because it first initializes the loader). Options:
+  blanket-disable LSan; suppression file; or scope LSan off for Vulkan tests only.
+- **Decision:** The full ASan+UBSan run sets `ASAN_OPTIONS=detect_leaks=0` (UAF,
+  overflow, and UBSan stay active); a second CTest entry leak-checks the
+  non-Vulkan suite (`~[vk]`) with `detect_leaks=1`; and the **validation layer is
+  the authoritative Vulkan-object-leak gate** — strengthened with a pNext
+  create/destroy messenger so undestroyed objects are caught at vkDestroyInstance.
+- **Rationale:** A suppression file can't match the unsymbolized driver frames;
+  blanket-disabling loses coverage on our code. This keeps real leak coverage on
+  our code and a Vulkan-native gate on Vulkan objects, without rationalizing a
+  benign leak in code we own (§8.8).
+- **Contract impact:** refines how ADR-0001's sanitizer gate (§7) is run; no
+  consumer-facing contract change. Journaled here; supersede ADR-0001 only if we
+  decide to make this a formal gate-policy contract.
+- **Deferred alternatives:** revisit a suppression file if a future driver
+  symbolizes its leaks.
+
 ### D-0014 — Concurrency baseline: single-threaded, not thread-safe
 - **Date / milestone:** 2026-06-18 / M2 (CONTRACT)
 - **Choice:** Thread-safe public API now vs. a single-threaded baseline vs.

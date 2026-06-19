@@ -115,8 +115,8 @@ void Viewer::Impl::onCursorPos(GLFWwindow* w, double x, double y) {
     if (im->lmbDown) {
         const float dx = static_cast<float>(x - im->lastX);
         const float dy = static_cast<float>(y - im->lastY);
-        // Drag right/down rotates the scene the intuitive way (eye moves opposite).
-        im->camera.orbit(-dx * kOrbitRadiansPerPixel, -dy * kOrbitRadiansPerPixel);
+        // Drag orbits the camera with the cursor (eye follows the drag direction).
+        im->camera.orbit(dx * kOrbitRadiansPerPixel, dy * kOrbitRadiansPerPixel);
     }
     im->lastX = x;
     im->lastY = y;

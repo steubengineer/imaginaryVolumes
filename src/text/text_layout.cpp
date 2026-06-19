@@ -7,7 +7,13 @@ float appendText(iv::vk::Overlay& overlay, Shaper& shaper, std::string_view utf8
                  const TextStyle& style) {
     const auto glyphs = shaper.shape(utf8);
 
-    const float scale = shaper.pixelSize() / static_cast<float>(shaper.unitsPerEm()); // em u -> px
+    // The atlas is size-independent (font-unit outlines); the render size comes from
+    // the quad/advance scaling, so one Shaper renders any size (ADR-0023). advScale
+    // converts the shaper's pixel-size advances/offsets to the requested size.
+    const float baseSize = shaper.pixelSize();
+    const float size = style.pixelSize > 0.0f ? style.pixelSize : baseSize;
+    const float advScale = size / baseSize;
+    const float scale = size / static_cast<float>(shaper.unitsPerEm()); // em units -> px
     const float halfW = static_cast<float>(fbWidth) * 0.5f;
     const float halfH = static_cast<float>(fbHeight) * 0.5f;
     // Pixel (top-left origin) -> Vulkan clip space (NDC): (0,0) top-left -> (-1,-1).
@@ -22,8 +28,8 @@ float appendText(iv::vk::Overlay& overlay, Shaper& shaper, std::string_view utf8
     for (const auto& g : glyphs) {
         const EncodedGlyph& e = shaper.encodeGlyph(g.glyphId);
         if (!e.blank) {
-            const float ox = penX + g.xOffset;
-            const float oy = penY - g.yOffset; // em y-up -> screen y-down baseline
+            const float ox = penX + g.xOffset * advScale;
+            const float oy = penY - g.yOffset * advScale; // em y-up -> screen y-down baseline
             const float x0 = e.extents.minX - pad;
             const float x1 = e.extents.maxX + pad;
             const float y0 = e.extents.minY - pad;
@@ -50,8 +56,8 @@ float appendText(iv::vk::Overlay& overlay, Shaper& shaper, std::string_view utf8
             overlay.glyphs.push_back(tr);
             overlay.glyphs.push_back(tl);
         }
-        penX += g.xAdvance;
-        penY += g.yAdvance;
+        penX += g.xAdvance * advScale;
+        penY += g.yAdvance * advScale;
     }
 
     // The renderer uploads this as the Slug atlas texel buffer (ADR-0023). It is the

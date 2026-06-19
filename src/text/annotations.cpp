@@ -29,8 +29,10 @@ constexpr Color kLineColor{0.85f, 0.86f, 0.92f, 1.0f};
 constexpr Color kLabelColor{1.0f, 1.0f, 1.0f, 1.0f};
 constexpr float kTickMajorLen = 0.045f;
 constexpr float kTickMinorLen = 0.024f;
-constexpr float kTickLabelMargin = 24.0f; // px outward from the tick (clears the tick mark)
-constexpr float kAxisLabelMargin = 54.0f; // px outward (beyond the tick labels)
+constexpr float kTickLabelMargin = 30.0f; // px outward from the tick (clears the tick mark)
+constexpr float kAxisLabelMargin = 66.0f; // px outward (beyond the larger tick labels)
+constexpr float kAxisLabelScale = 1.3f;   // axis labels, relative to tick labels
+constexpr float kTitleScale = 1.5f;       // plot title, relative to tick labels
 
 Vec3 add(const Vec3& a, const Vec3& b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
 Vec3 scale(const Vec3& a, float s) { return {a[0] * s, a[1] * s, a[2] * s}; }
@@ -113,12 +115,14 @@ float textWidth(Shaper& sh, std::string_view s) {
     return w;
 }
 
-// Place `s` centered (horizontally) at pixel (cx, cy), vertically centered on cy.
+// Place `s` centered (horizontally) at pixel (cx, cy), vertically centered on cy, at
+// `pixelSize` px (the Slug atlas is size-independent, so any size uses the one shaper).
 void addCenteredLabel(Overlay& ov, Shaper& sh, std::string_view s, float cx, float cy,
-                      std::uint32_t fbW, std::uint32_t fbH) {
-    const float penX = cx - 0.5f * textWidth(sh, s);
-    const float penY = cy + 0.35f * sh.pixelSize(); // approx vertical centering of caps
-    iv::text::appendText(ov, sh, s, penX, penY, fbW, fbH, {kLabelColor});
+                      std::uint32_t fbW, std::uint32_t fbH, float pixelSize) {
+    const float w = textWidth(sh, s) * (pixelSize / sh.pixelSize()); // width at the render size
+    const float penX = cx - 0.5f * w;
+    const float penY = cy + 0.35f * pixelSize; // approx vertical centering of caps
+    iv::text::appendText(ov, sh, s, penX, penY, fbW, fbH, {kLabelColor, pixelSize});
 }
 
 } // namespace
@@ -242,7 +246,7 @@ void buildAnnotations(Overlay& ov, const PlotAxes& axes, const iv::vk::RenderPar
                 }
                 addCenteredLabel(ov, sh, iv::formatTick(v, ticks.step),
                                  px[0] + bestOut[0] * kTickLabelMargin,
-                                 px[1] + bestOut[1] * kTickLabelMargin, fbW, fbH);
+                                 px[1] + bestOut[1] * kTickLabelMargin, fbW, fbH, sh.pixelSize());
             }
         }
         if (axes.axisLabels) {
@@ -253,7 +257,8 @@ void buildAnnotations(Overlay& ov, const PlotAxes& axes, const iv::vk::RenderPar
                 const auto px = iv::vk::projectToPixel(M, mid, fbW, fbH);
                 if (px[2] > 0.0f) {
                     addCenteredLabel(ov, sh, lbl, px[0] + bestOut[0] * kAxisLabelMargin,
-                                     px[1] + bestOut[1] * kAxisLabelMargin, fbW, fbH);
+                                     px[1] + bestOut[1] * kAxisLabelMargin, fbW, fbH,
+                                     sh.pixelSize() * kAxisLabelScale);
                 }
             }
         }
@@ -290,10 +295,11 @@ void buildAnnotations(Overlay& ov, const PlotAxes& axes, const iv::vk::RenderPar
         }
     }
 
-    // --- Title: screen top-center ---
+    // --- Title: screen top-center, the largest label ---
     if (axes.showTitle && !axes.title.empty()) {
-        addCenteredLabel(ov, sh, axes.title, static_cast<float>(fbW) * 0.5f, sh.pixelSize() * 1.3f,
-                         fbW, fbH);
+        const float titleSize = sh.pixelSize() * kTitleScale;
+        addCenteredLabel(ov, sh, axes.title, static_cast<float>(fbW) * 0.5f, titleSize, fbW, fbH,
+                         titleSize);
     }
 }
 

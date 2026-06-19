@@ -18,6 +18,10 @@ namespace iv::text {
 
 struct TextStyle {
     std::array<float, 4> color{1.0f, 1.0f, 1.0f, 1.0f}; // RGBA, straight alpha
+    // Render size in pixels; 0 = use the Shaper's configured size. The Slug atlas is
+    // size-independent (font-unit outlines), so one Shaper renders any size by scaling
+    // the quads + shaped advances (ADR-0023).
+    float pixelSize{0.0f};
 };
 
 // Shape `utf8` with `shaper`, encode its glyphs into the shaper's atlas, and append

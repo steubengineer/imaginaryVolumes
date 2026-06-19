@@ -18,6 +18,7 @@
 #include <array>
 #include <cstdint>
 #include <thread>
+#include <vector>
 
 namespace iv::vk {
 
@@ -40,6 +41,24 @@ struct RenderParams {
     std::uint32_t colormapMode{0};
 };
 
+// A 2D/3D overlay drawn over the volume render (ADR-0021): colored line-list and
+// triangle-list geometry, alpha-blended. Positions are transformed by `transform`
+// in the vertex shader: leave it identity for screen-space (clip-space) geometry,
+// or set the camera view-projection (ADR-0012) for world-space geometry (the M7
+// bounding box / axes). Glyph quads (ADR-0023) are emitted as triangles.
+struct OverlayVertex {
+    std::array<float, 3> pos;   // clip-space (identity transform) or world-space
+    std::array<float, 4> color; // RGBA, straight (non-premultiplied) alpha
+};
+struct Overlay {
+    std::vector<OverlayVertex> lines;     // line list (consecutive vertex pairs)
+    std::vector<OverlayVertex> triangles; // triangle list (consecutive vertex triples)
+    // Column-major 4x4 (GLSL convention); identity => positions are clip-space.
+    std::array<float, 16> transform{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                    0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    [[nodiscard]] bool empty() const noexcept { return lines.empty() && triangles.empty(); }
+};
+
 class Renderer {
 public:
     // Build the compute pipeline, samplers, and the colormap LUT (ADR-0011/0014).
@@ -52,9 +71,12 @@ public:
     ~Renderer() = default;
 
     // Render `volume` to a width x height image and read it back (ADR-0006 layout:
-    // top-left origin, row-major, pixel (x,y) at byte (y*w+x)*4, R,G,B,A).
+    // top-left origin, row-major, pixel (x,y) at byte (y*w+x)*4, R,G,B,A). If
+    // `overlay` is non-null and non-empty, it is composited over the volume in a
+    // graphics pass before readback (ADR-0021).
     [[nodiscard]] Result<ImageReadback> render(const Volume& volume, std::uint32_t width,
-                                               std::uint32_t height, const RenderParams& params);
+                                               std::uint32_t height, const RenderParams& params,
+                                               const Overlay* overlay = nullptr);
 
     // Present path (ADR-0017): record a render of `volume` with `params` into the
     // caller-provided command buffer, dispatching into an internal storage image
@@ -64,7 +86,7 @@ public:
     // it to ePresentSrcKHR). The command buffer must be in the recording state.
     [[nodiscard]] Status recordFrame(::vk::CommandBuffer cmd, const Volume& volume,
                                      const RenderParams& params, ::vk::Image dstImage,
-                                     ::vk::Extent2D dstExtent);
+                                     ::vk::Extent2D dstExtent, const Overlay* overlay = nullptr);
 
     // True if the volume sampler uses linear filtering (false => nearest fallback
     // when R32G32_SFLOAT lacks linear-filter support; ADR-0009 note).
@@ -80,6 +102,15 @@ private:
     // Lazily (re)create the present-path storage image / UBO / descriptor set when
     // the extent or volume changes (ADR-0017).
     [[nodiscard]] Status ensureFrameResources(const Volume& volume, ::vk::Extent2D extent);
+
+    // Record the overlay graphics pass (ADR-0021): begin the render pass on
+    // `framebuffer`, draw `lineVertexCount` line vertices then `triangleVertexCount`
+    // triangle vertices from `vbuf` (lines at offset 0, triangles immediately after),
+    // end. The caller transitions the target to eColorAttachmentOptimal and uploads
+    // the vertices beforehand.
+    void drawOverlay(::vk::CommandBuffer cmd, ::vk::Framebuffer framebuffer, ::vk::Extent2D extent,
+                     ::vk::Buffer vbuf, std::uint32_t lineVertexCount,
+                     std::uint32_t triangleVertexCount, const std::array<float, 16>& transform);
 
     // Borrowed from the Context, which must outlive this Renderer.
     ::vk::Device device_{};
@@ -101,6 +132,14 @@ private:
     Unique<::vk::Image> lutImage_;
     Unique<::vk::ImageView> lutView_;
 
+    // Overlay graphics pipeline (ADR-0021), created once. The line and triangle
+    // pipelines share the layout (a single mat4 push constant) and the render pass.
+    // Declared before the frame framebuffer so the render pass outlives it.
+    Unique<::vk::RenderPass> renderPass_;
+    Unique<::vk::PipelineLayout> overlayPipelineLayout_;
+    Unique<::vk::Pipeline> overlayLinePipeline_;
+    Unique<::vk::Pipeline> overlayTrianglePipeline_;
+
     // Present-path (recordFrame) resources, lazily (re)created on extent/volume
     // change. Declared after the pipeline objects; the view/image precede their
     // backing memory only within each (image, memory) pair via reset order below —
@@ -115,6 +154,16 @@ private:
     Unique<::vk::Buffer> frameUbo_;
     Unique<::vk::DescriptorPool> frameDescriptorPool_;
     ::vk::DescriptorSet frameSet_{};
+    // Overlay framebuffer for the present path, (re)created with frameView_/extent.
+    // Declared last so it is destroyed before frameView_ (which it references).
+    Unique<::vk::Framebuffer> frameFramebuffer_;
+    // Persistent overlay vertex buffer for the present path: grown on demand and
+    // persistently mapped. One frame is in flight (the viewer waits the fence before
+    // re-recording), so overwriting it each frame is safe.
+    Unique<::vk::DeviceMemory> frameOverlayMem_;
+    Unique<::vk::Buffer> frameOverlayBuf_;
+    void* frameOverlayMapped_{nullptr};
+    ::vk::DeviceSize frameOverlayCapacity_{0};
 };
 
 } // namespace iv::vk

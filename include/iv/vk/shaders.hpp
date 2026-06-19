@@ -18,6 +18,12 @@ namespace iv::vk::shaders {
 extern const unsigned char ray_march_comp_data[];
 extern const ::std::size_t ray_march_comp_size;
 
+// shaders/overlay.vert, shaders/overlay.frag (ADR-0021 overlay graphics pipeline)
+extern const unsigned char overlay_vert_data[];
+extern const ::std::size_t overlay_vert_size;
+extern const unsigned char overlay_frag_data[];
+extern const ::std::size_t overlay_frag_size;
+
 } // namespace iv::vk::shaders
 
 namespace iv::vk {

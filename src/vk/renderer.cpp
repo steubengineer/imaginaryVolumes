@@ -91,6 +91,61 @@ Ubo fillUbo(const RenderParams& params, std::uint32_t width, std::uint32_t heigh
     return data;
 }
 
+static_assert(sizeof(OverlayVertex) == 7 * sizeof(float),
+              "OverlayVertex must be tightly packed (vec3 pos + vec4 color = 28 bytes)");
+
+// Host-visible vertex buffer holding the overlay's line vertices followed by its
+// triangle vertices (ADR-0021): lines at offset 0, triangles at
+// lines.size()*sizeof(OverlayVertex). Precondition: !ov.empty().
+struct OverlayBuffer {
+    Unique<vkh::Buffer> buffer;
+    Unique<vkh::DeviceMemory> memory;
+};
+Result<OverlayBuffer> makeOverlayBuffer(vkh::Device device, vkh::PhysicalDevice phys,
+                                        const Overlay& ov) {
+    const vkh::DeviceSize bytes =
+        static_cast<vkh::DeviceSize>(ov.lines.size() + ov.triangles.size()) * sizeof(OverlayVertex);
+    OverlayBuffer out;
+    {
+        auto m = take(device.createBuffer(vkh::BufferCreateInfo{}
+                                              .setSize(bytes)
+                                              .setUsage(vkh::BufferUsageFlagBits::eVertexBuffer)
+                                              .setSharingMode(vkh::SharingMode::eExclusive)),
+                      "createBuffer(overlay)");
+        if (!m) {
+            return std::unexpected(std::move(m).error());
+        }
+        out.buffer = Unique<vkh::Buffer>(*m, [device](vkh::Buffer h) { device.destroyBuffer(h); });
+    }
+    {
+        auto mem = allocateAndBindBuffer(device, phys, out.buffer.get(),
+                                         vkh::MemoryPropertyFlagBits::eHostVisible
+                                             | vkh::MemoryPropertyFlagBits::eHostCoherent,
+                                         "overlay vertices");
+        if (!mem) {
+            return std::unexpected(std::move(mem).error());
+        }
+        out.memory = *std::move(mem);
+    }
+    {
+        auto mapped = take(device.mapMemory(out.memory.get(), 0, bytes), "mapMemory(overlay)");
+        if (!mapped) {
+            return std::unexpected(std::move(mapped).error());
+        }
+        auto* dst = static_cast<unsigned char*>(*mapped);
+        const std::size_t lineBytes = ov.lines.size() * sizeof(OverlayVertex);
+        if (!ov.lines.empty()) {
+            std::memcpy(dst, ov.lines.data(), lineBytes);
+        }
+        if (!ov.triangles.empty()) {
+            std::memcpy(dst + lineBytes, ov.triangles.data(),
+                        ov.triangles.size() * sizeof(OverlayVertex));
+        }
+        device.unmapMemory(out.memory.get());
+    }
+    return out;
+}
+
 } // namespace
 
 void Renderer::checkAffinity() const noexcept {
@@ -327,11 +382,148 @@ Result<Renderer> Renderer::create(const Context& ctx) {
             *m, [device](vkh::DescriptorPool h) { device.destroyDescriptorPool(h); });
     }
 
+    // --- Overlay graphics pipeline (ADR-0021): render pass + line/triangle pipelines ---
+    {
+        const auto color = vkh::AttachmentDescription{}
+                               .setFormat(kOutputFormat)
+                               .setSamples(vkh::SampleCountFlagBits::e1)
+                               .setLoadOp(vkh::AttachmentLoadOp::eLoad) // preserve the volume render
+                               .setStoreOp(vkh::AttachmentStoreOp::eStore)
+                               .setStencilLoadOp(vkh::AttachmentLoadOp::eDontCare)
+                               .setStencilStoreOp(vkh::AttachmentStoreOp::eDontCare)
+                               .setInitialLayout(vkh::ImageLayout::eColorAttachmentOptimal)
+                               .setFinalLayout(vkh::ImageLayout::eColorAttachmentOptimal);
+        const auto ref = vkh::AttachmentReference{}.setAttachment(0u).setLayout(
+            vkh::ImageLayout::eColorAttachmentOptimal);
+        const auto sub = vkh::SubpassDescription{}
+                             .setPipelineBindPoint(vkh::PipelineBindPoint::eGraphics)
+                             .setColorAttachments(ref);
+        const auto dep = vkh::SubpassDependency{}
+                             .setSrcSubpass(VK_SUBPASS_EXTERNAL)
+                             .setDstSubpass(0u)
+                             .setSrcStageMask(vkh::PipelineStageFlagBits::eColorAttachmentOutput)
+                             .setDstStageMask(vkh::PipelineStageFlagBits::eColorAttachmentOutput)
+                             .setSrcAccessMask(vkh::AccessFlagBits::eColorAttachmentWrite)
+                             .setDstAccessMask(vkh::AccessFlagBits::eColorAttachmentWrite
+                                               | vkh::AccessFlagBits::eColorAttachmentRead);
+        auto m = take(device.createRenderPass(vkh::RenderPassCreateInfo{}
+                                                  .setAttachments(color)
+                                                  .setSubpasses(sub)
+                                                  .setDependencies(dep)),
+                      "createRenderPass");
+        if (!m) {
+            return std::unexpected(std::move(m).error());
+        }
+        r.renderPass_ = Unique<vkh::RenderPass>(
+            *m, [device](vkh::RenderPass h) { device.destroyRenderPass(h); });
+    }
+    {
+        const auto pcRange = vkh::PushConstantRange{}
+                                 .setStageFlags(vkh::ShaderStageFlagBits::eVertex)
+                                 .setOffset(0u)
+                                 .setSize(static_cast<std::uint32_t>(sizeof(float) * 16u));
+        auto m = take(device.createPipelineLayout(
+                          vkh::PipelineLayoutCreateInfo{}.setPushConstantRanges(pcRange)),
+                      "createPipelineLayout(overlay)");
+        if (!m) {
+            return std::unexpected(std::move(m).error());
+        }
+        r.overlayPipelineLayout_ = Unique<vkh::PipelineLayout>(
+            *m, [device](vkh::PipelineLayout h) { device.destroyPipelineLayout(h); });
+    }
+    {
+        auto vert = makeShaderModule(device, shaders::overlay_vert_data, shaders::overlay_vert_size);
+        if (!vert) {
+            return std::unexpected(std::move(vert).error());
+        }
+        auto frag = makeShaderModule(device, shaders::overlay_frag_data, shaders::overlay_frag_size);
+        if (!frag) {
+            return std::unexpected(std::move(frag).error());
+        }
+        const std::array<vkh::PipelineShaderStageCreateInfo, 2> stages{{
+            vkh::PipelineShaderStageCreateInfo{}
+                .setStage(vkh::ShaderStageFlagBits::eVertex)
+                .setModule(vert->get())
+                .setPName("main"),
+            vkh::PipelineShaderStageCreateInfo{}
+                .setStage(vkh::ShaderStageFlagBits::eFragment)
+                .setModule(frag->get())
+                .setPName("main"),
+        }};
+        const auto binding = vkh::VertexInputBindingDescription{}
+                                 .setBinding(0u)
+                                 .setStride(static_cast<std::uint32_t>(sizeof(OverlayVertex)))
+                                 .setInputRate(vkh::VertexInputRate::eVertex);
+        const std::array<vkh::VertexInputAttributeDescription, 2> attrs{{
+            vkh::VertexInputAttributeDescription{}.setLocation(0u).setBinding(0u).setFormat(
+                vkh::Format::eR32G32B32Sfloat).setOffset(0u),
+            vkh::VertexInputAttributeDescription{}.setLocation(1u).setBinding(0u).setFormat(
+                vkh::Format::eR32G32B32A32Sfloat)
+                .setOffset(static_cast<std::uint32_t>(sizeof(float) * 3u)),
+        }};
+        const auto vinput = vkh::PipelineVertexInputStateCreateInfo{}
+                                .setVertexBindingDescriptions(binding)
+                                .setVertexAttributeDescriptions(attrs);
+        const auto vp =
+            vkh::PipelineViewportStateCreateInfo{}.setViewportCount(1u).setScissorCount(1u);
+        const auto rs = vkh::PipelineRasterizationStateCreateInfo{}
+                            .setPolygonMode(vkh::PolygonMode::eFill)
+                            .setCullMode(vkh::CullModeFlagBits::eNone)
+                            .setFrontFace(vkh::FrontFace::eCounterClockwise)
+                            .setLineWidth(1.0f);
+        const auto ms = vkh::PipelineMultisampleStateCreateInfo{}.setRasterizationSamples(
+            vkh::SampleCountFlagBits::e1);
+        const auto blendAttach = vkh::PipelineColorBlendAttachmentState{}
+                                     .setBlendEnable(VK_TRUE)
+                                     .setSrcColorBlendFactor(vkh::BlendFactor::eSrcAlpha)
+                                     .setDstColorBlendFactor(vkh::BlendFactor::eOneMinusSrcAlpha)
+                                     .setColorBlendOp(vkh::BlendOp::eAdd)
+                                     .setSrcAlphaBlendFactor(vkh::BlendFactor::eOne)
+                                     .setDstAlphaBlendFactor(vkh::BlendFactor::eOneMinusSrcAlpha)
+                                     .setAlphaBlendOp(vkh::BlendOp::eAdd)
+                                     .setColorWriteMask(vkh::ColorComponentFlagBits::eR
+                                                        | vkh::ColorComponentFlagBits::eG
+                                                        | vkh::ColorComponentFlagBits::eB
+                                                        | vkh::ColorComponentFlagBits::eA);
+        const auto cb = vkh::PipelineColorBlendStateCreateInfo{}.setAttachments(blendAttach);
+        const std::array<vkh::DynamicState, 2> dynStates{vkh::DynamicState::eViewport,
+                                                         vkh::DynamicState::eScissor};
+        const auto dyn = vkh::PipelineDynamicStateCreateInfo{}.setDynamicStates(dynStates);
+
+        const std::array<vkh::PrimitiveTopology, 2> topos{vkh::PrimitiveTopology::eLineList,
+                                                         vkh::PrimitiveTopology::eTriangleList};
+        const std::array<Unique<vkh::Pipeline>*, 2> targets{&r.overlayLinePipeline_,
+                                                           &r.overlayTrianglePipeline_};
+        for (std::size_t i = 0; i < topos.size(); ++i) {
+            const auto ia = vkh::PipelineInputAssemblyStateCreateInfo{}.setTopology(topos[i]);
+            auto pipe = take(device.createGraphicsPipeline(
+                                 {}, vkh::GraphicsPipelineCreateInfo{}
+                                         .setStages(stages)
+                                         .setPVertexInputState(&vinput)
+                                         .setPInputAssemblyState(&ia)
+                                         .setPViewportState(&vp)
+                                         .setPRasterizationState(&rs)
+                                         .setPMultisampleState(&ms)
+                                         .setPColorBlendState(&cb)
+                                         .setPDynamicState(&dyn)
+                                         .setLayout(r.overlayPipelineLayout_.get())
+                                         .setRenderPass(r.renderPass_.get())
+                                         .setSubpass(0u)),
+                             "createGraphicsPipeline(overlay)");
+            if (!pipe) {
+                return std::unexpected(std::move(pipe).error());
+            }
+            *targets[i] = Unique<vkh::Pipeline>(
+                *pipe, [device](vkh::Pipeline h) { device.destroyPipeline(h); });
+        }
+    }
+
     return r;
 }
 
 Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width,
-                                       std::uint32_t height, const RenderParams& params) {
+                                       std::uint32_t height, const RenderParams& params,
+                                       const Overlay* overlay) {
     checkAffinity();
     IV_ASSERT(width > 0u && height > 0u, "Renderer::render: extent must be non-zero");
     const vkh::Device device = device_;
@@ -356,7 +548,8 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
                                              .setSamples(vkh::SampleCountFlagBits::e1)
                                              .setTiling(vkh::ImageTiling::eOptimal)
                                              .setUsage(vkh::ImageUsageFlagBits::eStorage
-                                                       | vkh::ImageUsageFlagBits::eTransferSrc)
+                                                       | vkh::ImageUsageFlagBits::eTransferSrc
+                                                       | vkh::ImageUsageFlagBits::eColorAttachment)
                                              .setInitialLayout(vkh::ImageLayout::eUndefined)),
                       "createImage(output)");
         if (!m) {
@@ -458,6 +651,37 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
     }
     writeComputeDescriptors(set, volume.view(), view.get(), ubo.get());
 
+    // --- Overlay resources (ADR-0021): created only when an overlay is supplied ---
+    const bool hasOverlay = overlay != nullptr && !overlay->empty();
+    Unique<vkh::Buffer> overlayBuf;
+    Unique<vkh::DeviceMemory> overlayMem;
+    Unique<vkh::Framebuffer> overlayFb;
+    std::uint32_t overlayLineVerts = 0u;
+    std::uint32_t overlayTriVerts = 0u;
+    if (hasOverlay) {
+        auto ob = makeOverlayBuffer(device, physicalDevice_, *overlay);
+        if (!ob) {
+            return std::unexpected(std::move(ob).error());
+        }
+        overlayBuf = std::move(ob->buffer);
+        overlayMem = std::move(ob->memory);
+        overlayLineVerts = static_cast<std::uint32_t>(overlay->lines.size());
+        overlayTriVerts = static_cast<std::uint32_t>(overlay->triangles.size());
+        const vkh::ImageView attach = view.get();
+        auto fb = take(device.createFramebuffer(vkh::FramebufferCreateInfo{}
+                                                    .setRenderPass(renderPass_.get())
+                                                    .setAttachments(attach)
+                                                    .setWidth(width)
+                                                    .setHeight(height)
+                                                    .setLayers(1u)),
+                       "createFramebuffer(render)");
+        if (!fb) {
+            return std::unexpected(std::move(fb).error());
+        }
+        overlayFb = Unique<vkh::Framebuffer>(
+            *fb, [device](vkh::Framebuffer h) { device.destroyFramebuffer(h); });
+    }
+
     // --- Record: storage -> general, dispatch, -> transferSrc, copy to staging ---
     const vkh::Image img = image.get();
     const vkh::Buffer buf = staging.get();
@@ -485,13 +709,38 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
                 cmd.bindDescriptorSets(vkh::PipelineBindPoint::eCompute, pipelineLayout_.get(), 0u,
                                        set, nullptr);
                 cmd.dispatch(gx, gy, 1u);
-                cmd.pipelineBarrier(
-                    vkh::PipelineStageFlagBits::eComputeShader,
-                    vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr, nullptr,
-                    imageBarrier(img, vkh::ImageLayout::eGeneral,
-                                 vkh::ImageLayout::eTransferSrcOptimal,
-                                 vkh::AccessFlagBits::eShaderWrite,
-                                 vkh::AccessFlagBits::eTransferRead));
+                if (hasOverlay) {
+                    // general -> color attachment, draw the overlay, -> transfer src.
+                    cmd.pipelineBarrier(
+                        vkh::PipelineStageFlagBits::eComputeShader,
+                        vkh::PipelineStageFlagBits::eColorAttachmentOutput, vkh::DependencyFlags{},
+                        nullptr, nullptr,
+                        imageBarrier(img, vkh::ImageLayout::eGeneral,
+                                     vkh::ImageLayout::eColorAttachmentOptimal,
+                                     vkh::AccessFlagBits::eShaderWrite,
+                                     vkh::AccessFlagBits::eColorAttachmentWrite
+                                         | vkh::AccessFlagBits::eColorAttachmentRead));
+                    drawOverlay(cmd, overlayFb.get(), vkh::Extent2D{width, height},
+                                overlayBuf.get(), overlayLineVerts, overlayTriVerts,
+                                overlay->transform);
+                    cmd.pipelineBarrier(
+                        vkh::PipelineStageFlagBits::eColorAttachmentOutput,
+                        vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr,
+                        nullptr,
+                        imageBarrier(img, vkh::ImageLayout::eColorAttachmentOptimal,
+                                     vkh::ImageLayout::eTransferSrcOptimal,
+                                     vkh::AccessFlagBits::eColorAttachmentWrite,
+                                     vkh::AccessFlagBits::eTransferRead));
+                } else {
+                    cmd.pipelineBarrier(
+                        vkh::PipelineStageFlagBits::eComputeShader,
+                        vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr,
+                        nullptr,
+                        imageBarrier(img, vkh::ImageLayout::eGeneral,
+                                     vkh::ImageLayout::eTransferSrcOptimal,
+                                     vkh::AccessFlagBits::eShaderWrite,
+                                     vkh::AccessFlagBits::eTransferRead));
+                }
                 cmd.copyImageToBuffer(img, vkh::ImageLayout::eTransferSrcOptimal, buf, region);
             });
         !s) {
@@ -549,12 +798,50 @@ void Renderer::writeComputeDescriptors(vkh::DescriptorSet set, vkh::ImageView vo
     device_.updateDescriptorSets(writes, nullptr);
 }
 
+void Renderer::drawOverlay(vkh::CommandBuffer cmd, vkh::Framebuffer framebuffer,
+                           vkh::Extent2D extent, vkh::Buffer vbuf, std::uint32_t lineVertexCount,
+                           std::uint32_t triangleVertexCount,
+                           const std::array<float, 16>& transform) {
+    cmd.beginRenderPass(vkh::RenderPassBeginInfo{}
+                            .setRenderPass(renderPass_.get())
+                            .setFramebuffer(framebuffer)
+                            .setRenderArea(vkh::Rect2D{vkh::Offset2D{0, 0}, extent}),
+                        vkh::SubpassContents::eInline);
+    const auto viewport = vkh::Viewport{}
+                              .setX(0.0f)
+                              .setY(0.0f)
+                              .setWidth(static_cast<float>(extent.width))
+                              .setHeight(static_cast<float>(extent.height))
+                              .setMinDepth(0.0f)
+                              .setMaxDepth(1.0f);
+    const auto scissor = vkh::Rect2D{vkh::Offset2D{0, 0}, extent};
+    cmd.setViewport(0u, viewport);
+    cmd.setScissor(0u, scissor);
+    cmd.pushConstants<float>(overlayPipelineLayout_.get(), vkh::ShaderStageFlagBits::eVertex, 0u,
+                             transform);
+    const vkh::DeviceSize zero = 0;
+    if (lineVertexCount > 0u) {
+        cmd.bindPipeline(vkh::PipelineBindPoint::eGraphics, overlayLinePipeline_.get());
+        cmd.bindVertexBuffers(0u, vbuf, zero);
+        cmd.draw(lineVertexCount, 1u, 0u, 0u);
+    }
+    if (triangleVertexCount > 0u) {
+        const vkh::DeviceSize triOffset =
+            static_cast<vkh::DeviceSize>(lineVertexCount) * sizeof(OverlayVertex);
+        cmd.bindPipeline(vkh::PipelineBindPoint::eGraphics, overlayTrianglePipeline_.get());
+        cmd.bindVertexBuffers(0u, vbuf, triOffset);
+        cmd.draw(triangleVertexCount, 1u, 0u, 0u);
+    }
+    cmd.endRenderPass();
+}
+
 Status Renderer::ensureFrameResources(const Volume& volume, vkh::Extent2D extent) {
     // Nothing relevant changed since the last frame: reuse everything (ADR-0017).
     if (frameImage_ && frameExtent_ == extent && frameVolumeView_ == volume.view()) {
         return {};
     }
     const vkh::Device device = device_;
+    frameFramebuffer_.reset(); // references the old frameView_, recreated below (ADR-0021)
 
     // (Re)create the storage image + view at the new extent. Reset the old view
     // before the old image is destroyed (move-assign), and free the old memory only
@@ -570,7 +857,8 @@ Status Renderer::ensureFrameResources(const Volume& volume, vkh::Extent2D extent
                               .setSamples(vkh::SampleCountFlagBits::e1)
                               .setTiling(vkh::ImageTiling::eOptimal)
                               .setUsage(vkh::ImageUsageFlagBits::eStorage
-                                        | vkh::ImageUsageFlagBits::eTransferSrc)
+                                        | vkh::ImageUsageFlagBits::eTransferSrc
+                                        | vkh::ImageUsageFlagBits::eColorAttachment)
                               .setInitialLayout(vkh::ImageLayout::eUndefined)),
                       "createImage(frame)");
         if (!m) {
@@ -601,6 +889,22 @@ Status Renderer::ensureFrameResources(const Volume& volume, vkh::Extent2D extent
         }
         frameView_ =
             Unique<vkh::ImageView>(*m, [device](vkh::ImageView h) { device.destroyImageView(h); });
+    }
+    {
+        // Overlay framebuffer (ADR-0021) wrapping the new view, at the new extent.
+        const vkh::ImageView attach = frameView_.get();
+        auto fb = take(device.createFramebuffer(vkh::FramebufferCreateInfo{}
+                                                    .setRenderPass(renderPass_.get())
+                                                    .setAttachments(attach)
+                                                    .setWidth(extent.width)
+                                                    .setHeight(extent.height)
+                                                    .setLayers(1u)),
+                       "createFramebuffer(frame)");
+        if (!fb) {
+            return std::unexpected(std::move(fb).error());
+        }
+        frameFramebuffer_ = Unique<vkh::Framebuffer>(
+            *fb, [device](vkh::Framebuffer h) { device.destroyFramebuffer(h); });
     }
 
     // The UBO is allocated once and persistently mapped (host-coherent). recordFrame
@@ -675,7 +979,7 @@ Status Renderer::ensureFrameResources(const Volume& volume, vkh::Extent2D extent
 
 Status Renderer::recordFrame(vkh::CommandBuffer cmd, const Volume& volume,
                              const RenderParams& params, vkh::Image dstImage,
-                             vkh::Extent2D dstExtent) {
+                             vkh::Extent2D dstExtent, const Overlay* overlay) {
     checkAffinity();
     IV_ASSERT(dstExtent.width > 0u && dstExtent.height > 0u,
               "Renderer::recordFrame: extent must be non-zero");
@@ -686,6 +990,63 @@ Status Renderer::recordFrame(vkh::CommandBuffer cmd, const Volume& volume,
     // Update the UBO in place (persistently mapped, host-coherent — no flush needed).
     const Ubo data = fillUbo(params, dstExtent.width, dstExtent.height, volume.magnitudeRange());
     std::memcpy(frameUboMapped_, &data, sizeof(Ubo));
+
+    // Overlay (ADR-0021): grow the persistent vertex buffer on demand, copy vertices.
+    const bool hasOverlay = overlay != nullptr && !overlay->empty();
+    std::uint32_t ovLineVerts = 0u;
+    std::uint32_t ovTriVerts = 0u;
+    if (hasOverlay) {
+        ovLineVerts = static_cast<std::uint32_t>(overlay->lines.size());
+        ovTriVerts = static_cast<std::uint32_t>(overlay->triangles.size());
+        const vkh::DeviceSize bytes =
+            static_cast<vkh::DeviceSize>(ovLineVerts + ovTriVerts) * sizeof(OverlayVertex);
+        if (bytes > frameOverlayCapacity_) {
+            const vkh::Device device = device_;
+            frameOverlayBuf_.reset();
+            frameOverlayMapped_ = nullptr;
+            {
+                auto m = take(
+                    device.createBuffer(vkh::BufferCreateInfo{}
+                                            .setSize(bytes)
+                                            .setUsage(vkh::BufferUsageFlagBits::eVertexBuffer)
+                                            .setSharingMode(vkh::SharingMode::eExclusive)),
+                    "createBuffer(frame overlay)");
+                if (!m) {
+                    return std::unexpected(std::move(m).error());
+                }
+                frameOverlayBuf_ =
+                    Unique<vkh::Buffer>(*m, [device](vkh::Buffer h) { device.destroyBuffer(h); });
+            }
+            {
+                auto mem = allocateAndBindBuffer(device, physicalDevice_, frameOverlayBuf_.get(),
+                                                 vkh::MemoryPropertyFlagBits::eHostVisible
+                                                     | vkh::MemoryPropertyFlagBits::eHostCoherent,
+                                                 "frame overlay vertices");
+                if (!mem) {
+                    return std::unexpected(std::move(mem).error());
+                }
+                frameOverlayMem_ = *std::move(mem);
+            }
+            {
+                auto mapped =
+                    take(device.mapMemory(frameOverlayMem_.get(), 0, bytes), "mapMemory(overlay)");
+                if (!mapped) {
+                    return std::unexpected(std::move(mapped).error());
+                }
+                frameOverlayMapped_ = *mapped;
+            }
+            frameOverlayCapacity_ = bytes;
+        }
+        auto* dst = static_cast<unsigned char*>(frameOverlayMapped_);
+        const std::size_t lineBytes = overlay->lines.size() * sizeof(OverlayVertex);
+        if (!overlay->lines.empty()) {
+            std::memcpy(dst, overlay->lines.data(), lineBytes);
+        }
+        if (!overlay->triangles.empty()) {
+            std::memcpy(dst + lineBytes, overlay->triangles.data(),
+                        overlay->triangles.size() * sizeof(OverlayVertex));
+        }
+    }
 
     const vkh::Image storage = frameImage_.get();
     const std::uint32_t gx = (dstExtent.width + kLocalSize - 1u) / kLocalSize;
@@ -702,12 +1063,34 @@ Status Renderer::recordFrame(vkh::CommandBuffer cmd, const Volume& volume,
     cmd.bindDescriptorSets(vkh::PipelineBindPoint::eCompute, pipelineLayout_.get(), 0u, frameSet_,
                            nullptr);
     cmd.dispatch(gx, gy, 1u);
-    // storage: general -> transferSrc for the blit.
-    cmd.pipelineBarrier(
-        vkh::PipelineStageFlagBits::eComputeShader, vkh::PipelineStageFlagBits::eTransfer,
-        vkh::DependencyFlags{}, nullptr, nullptr,
-        imageBarrier(storage, vkh::ImageLayout::eGeneral, vkh::ImageLayout::eTransferSrcOptimal,
-                     vkh::AccessFlagBits::eShaderWrite, vkh::AccessFlagBits::eTransferRead));
+    if (hasOverlay) {
+        // storage: general -> color attachment, draw the overlay, -> transfer src.
+        cmd.pipelineBarrier(
+            vkh::PipelineStageFlagBits::eComputeShader,
+            vkh::PipelineStageFlagBits::eColorAttachmentOutput, vkh::DependencyFlags{}, nullptr,
+            nullptr,
+            imageBarrier(storage, vkh::ImageLayout::eGeneral,
+                         vkh::ImageLayout::eColorAttachmentOptimal,
+                         vkh::AccessFlagBits::eShaderWrite,
+                         vkh::AccessFlagBits::eColorAttachmentWrite
+                             | vkh::AccessFlagBits::eColorAttachmentRead));
+        drawOverlay(cmd, frameFramebuffer_.get(), dstExtent, frameOverlayBuf_.get(), ovLineVerts,
+                    ovTriVerts, overlay->transform);
+        cmd.pipelineBarrier(
+            vkh::PipelineStageFlagBits::eColorAttachmentOutput,
+            vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr, nullptr,
+            imageBarrier(storage, vkh::ImageLayout::eColorAttachmentOptimal,
+                         vkh::ImageLayout::eTransferSrcOptimal,
+                         vkh::AccessFlagBits::eColorAttachmentWrite,
+                         vkh::AccessFlagBits::eTransferRead));
+    } else {
+        // storage: general -> transferSrc for the blit.
+        cmd.pipelineBarrier(
+            vkh::PipelineStageFlagBits::eComputeShader, vkh::PipelineStageFlagBits::eTransfer,
+            vkh::DependencyFlags{}, nullptr, nullptr,
+            imageBarrier(storage, vkh::ImageLayout::eGeneral, vkh::ImageLayout::eTransferSrcOptimal,
+                         vkh::AccessFlagBits::eShaderWrite, vkh::AccessFlagBits::eTransferRead));
+    }
     // dst: undefined -> transferDst (its prior contents are discarded by contract).
     cmd.pipelineBarrier(
         vkh::PipelineStageFlagBits::eTopOfPipe, vkh::PipelineStageFlagBits::eTransfer,

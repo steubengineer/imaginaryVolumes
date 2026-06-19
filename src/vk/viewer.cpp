@@ -75,6 +75,7 @@ struct Viewer::Impl {
 
     OrbitCamera camera;
     RenderParams params;
+    Overlay overlay; // drawn over the volume each frame (ADR-0021)
     bool lmbDown{false};
     double lastX{0.0};
     double lastY{0.0};
@@ -305,8 +306,10 @@ Status Viewer::Impl::drawFrame() {
         !s) {
         return std::unexpected(std::move(s).error());
     }
-    // Dispatch + blit into the swapchain image; leaves it in eTransferDstOptimal.
-    if (auto s = renderer->recordFrame(cmd, *volume, params, swapImage, swapExtent); !s) {
+    // Dispatch + (optional) overlay + blit into the swapchain image; leaves it in
+    // eTransferDstOptimal.
+    const Overlay* ov = overlay.empty() ? nullptr : &overlay;
+    if (auto s = renderer->recordFrame(cmd, *volume, params, swapImage, swapExtent, ov); !s) {
         return std::unexpected(std::move(s).error());
     }
     // Hand the image to the presentation engine.
@@ -514,6 +517,8 @@ OrbitCamera& Viewer::camera() noexcept { return impl_->camera; }
 void Viewer::requestResize(std::uint32_t width, std::uint32_t height) noexcept {
     glfwSetWindowSize(impl_->window.get(), static_cast<int>(width), static_cast<int>(height));
 }
+
+Overlay& Viewer::overlay() noexcept { return impl_->overlay; }
 
 Status Viewer::run() {
     IV_ASSERT(impl_->volume.has_value(), "Viewer::run: no volume set");

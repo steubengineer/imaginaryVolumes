@@ -15,6 +15,7 @@
 #include "iv/vk/viewer.hpp"
 #include "iv/vk/volume.hpp"
 
+#include <array>
 #include <complex>
 #include <cstdio>
 #include <cstdlib>
@@ -70,6 +71,20 @@ int main(int argc, char** argv) {
     viewer->setVolume(std::move(*vol));
     viewer->params().background = {0.05f, 0.05f, 0.07f, 1.0f};
     viewer->params().densityScale = 2.5f;
+
+    // A small screen-space overlay (ADR-0021): a white center crosshair (lines) and a
+    // translucent cyan corner quad (triangles) — exercises the overlay graphics pass
+    // in the windowed path. M7 replaces this with the bounding box / axes / legend.
+    {
+        auto& ov = viewer->overlay();
+        const std::array<float, 4> white{1.0f, 1.0f, 1.0f, 0.8f};
+        auto line = [&](float x, float y) { return iv::vk::OverlayVertex{{x, y, 0.0f}, white}; };
+        ov.lines = {line(-0.1f, 0.0f), line(0.1f, 0.0f), line(0.0f, -0.1f), line(0.0f, 0.1f)};
+        const std::array<float, 4> cyan{0.0f, 1.0f, 1.0f, 0.4f};
+        auto q = [&](float x, float y) { return iv::vk::OverlayVertex{{x, y, 0.0f}, cyan}; };
+        ov.triangles = {q(-1.0f, -1.0f), q(-0.6f, -1.0f), q(-0.6f, -0.6f),
+                        q(-1.0f, -1.0f), q(-0.6f, -0.6f), q(-1.0f, -0.6f)};
+    }
 
     iv::Status status;
     if (frames > 0) {

@@ -62,6 +62,10 @@ public:
     // framebuffer size (ADR-0017). The window manager may override the request.
     void requestResize(std::uint32_t width, std::uint32_t height) noexcept;
 
+    // Live-editable overlay (lines + quads) drawn over the volume each frame
+    // (ADR-0021); empty by default. M7 populates it with the box / axes / legend.
+    [[nodiscard]] Overlay& overlay() noexcept;
+
     // Enter the present loop until the window is closed (ADR-0017). Requires a
     // Volume to have been set.
     [[nodiscard]] Status run();

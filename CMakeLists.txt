@@ -107,6 +107,8 @@ function(iv_embed_shader SRC SYMBOL)
 endfunction()
 
 iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/ray_march.comp ray_march_comp)
+iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/overlay.vert overlay_vert)
+iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/overlay.frag overlay_frag)
 
 # --- Tests ---
 include(CTest)

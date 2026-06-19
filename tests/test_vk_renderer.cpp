@@ -5,6 +5,7 @@
 
 #include "catch_amalgamated.hpp"
 
+#include <array>
 #include <complex>
 #include <cstdint>
 #include <cstdlib>
@@ -308,5 +309,46 @@ TEST_CASE("Renderer: opacity is invariant to stepCount (dt-correction)", "[vk][r
     // regime), not background or a degenerate clamp.
     CHECK(static_cast<int>(f.g) > 40);
     CHECK(static_cast<int>(f.b) > 40);
+    CHECK(ctx->validationClean());
+}
+
+// teeth (ADR-0021): the overlay graphics pass composites colored geometry over the
+// volume render with alpha blending. Over an empty (background-only) volume, a
+// red 50%-alpha quad covering the LEFT half blends to (red+background)/2 there and
+// leaves the RIGHT half as background. No overlay (or no blend) changes both checks.
+TEST_CASE("Renderer: overlay composites a quad over the volume (alpha blend)", "[vk][renderer]") {
+    auto ctx = Context::create();
+    REQUIRE(ctx.has_value());
+    auto rend = Renderer::create(*ctx);
+    REQUIRE(rend.has_value());
+
+    const GridDims d{8, 8, 8};
+    auto vol = Volume::create(*ctx, uniformField(d, 0.0f, 0.0f), d); // empty -> background only
+    REQUIRE(vol.has_value());
+
+    RenderParams p;
+    p.background = {0.0f, 0.0f, 1.0f, 1.0f}; // blue -> bytes (0,0,255)
+
+    // Screen-space (identity transform) red quad at 50% alpha over the left half:
+    // clip x in [-1,0], full height. Two triangles; cullMode is none so winding is
+    // irrelevant.
+    iv::vk::Overlay ov;
+    const std::array<float, 4> red{1.0f, 0.0f, 0.0f, 0.5f};
+    auto vtx = [&](float x, float y) {
+        return iv::vk::OverlayVertex{{x, y, 0.0f}, red};
+    };
+    ov.triangles = {vtx(-1.0f, -1.0f), vtx(0.0f, -1.0f), vtx(0.0f, 1.0f),
+                    vtx(-1.0f, -1.0f), vtx(0.0f, 1.0f),  vtx(-1.0f, 1.0f)};
+
+    auto img = rend->render(*vol, 64, 64, p, &ov);
+    REQUIRE(img.has_value());
+
+    const auto left = img->at(16, 32); // under the quad: red*0.5 + blue*0.5 ~ (128,0,128)
+    CHECK(near8(left.r, 128, 4));
+    CHECK(near8(left.g, 0));
+    CHECK(near8(left.b, 128, 4));
+    const auto right = img->at(48, 32); // outside the quad: background blue
+    CHECK(near8(right.r, 0));
+    CHECK(near8(right.b, 255));
     CHECK(ctx->validationClean());
 }

@@ -1,64 +1,65 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-19 by the M5 session (Claude / Opus 4.8)
-**Active milestone:** none in flight — **M5 complete**; next is milestone planning
-(see Next Action).
+**Last updated:** 2026-06-19 by the M6 session (Claude / Opus 4.8)
+**Active milestone:** **M6 — Text & Annotation Foundation** (IMPLEMENT in progress;
+contract Accepted). M1–M5 complete & locked.
 
 ## Current State
-**M1–M5 are Complete and locked** (MILESTONES.md; CHANGELOG.md). The library
-ingests a complex field, uploads it as a 3D RG32F texture, ray-marches it with a
-compute pipeline, and now **presents it in an interactive GLFW window** — and a
-benchmark pins the performance contract.
+**M1–M5 Complete and locked** (MILESTONES.md; CHANGELOG.md): ingest a complex field →
+3D RG32F texture → compute ray-march → offscreen readback **and** interactive GLFW
+viewer, with a perf benchmark (15.3 ms / ~65 FPS @ 512³→720p on the RTX 4070).
 
-- **M5 viewer (ADR-0016/0017/0018):** `iv::vk::Viewer` (in the isolated `iv_viewer`
-  target) owns a GLFW window + surface, a presentation-capable `Context`, a swapchain
-  (UNORM/`FIFO`/`eTransferDst`), and the M4 `Renderer`. Per frame: acquire →
-  `Renderer::recordFrame` (dispatch into an internal storage image, **blit** into the
-  swapchain image) → `→ePresentSrcKHR` barrier → submit → present; one frame in
-  flight, in-flight fence, **per-image** `renderFinished` semaphore; recreate on
-  out-of-date/suboptimal/resize. Input: left-drag orbit, scroll zoom, keys
-  Esc/L/C/R (`iv::OrbitCamera`, pure host). `run()` / `runFrames(n)` /
-  `requestResize(w,h)`.
-- **Presentation `Context` (ADR-0016):** `ContextConfig{instanceExtensions,
-  deviceExtensions}` + `Context::create(config)`; headless `create()` unchanged.
-- **Renderer present path (ADR-0017):** `recordFrame` + private
-  `ensureFrameResources` / `writeComputeDescriptors`; shared `fillUbo`. The M4
-  offscreen `render()`+readback path is unchanged.
-- **Benchmark (ADR-0019):** headless `iv_bench` — 512³ → 1280×720, warm-up + N=30
-  timed `render()`, asserts median ≤ 33.3 ms. **Measured 15.3 ms (~65 FPS) on the
-  RTX 4070 → PASS.**
-- **CMake:** `find_package(glfw3)` + `option(IV_BUILD_VIEWER …)` (default ON when
-  found). `iv`, the tests, and `iv_bench` link **no** GLFW.
+**M6 is the text & annotation foundation** for publication-quality, quantitatively
+legible plots; split from M7 (annotations: box/axes/legend/units/API). **LaTeX is
+deferred** to a later milestone — M6 labels are text/Unicode.
 
-All green from clean builds: Debug full suite **235 assertions / 38 cases**;
-ASan+UBSan `ctest` (both entries); non-Vulkan suite leak-checked (117/19). M5 teeth
-(CHANGELOG § M5): benchmark `--no-early-term --step-mult 8` → red; present-barrier
-drop → validation error; pitch-clamp removal → red. ADR-0016…0019 Accepted; index
-current (it had been missing the M5 rows on disk — regenerated). D-0026…D-0030
-journaled; B-0008 logged.
+- **M6 CONTRACT Accepted** — ADR-0020 (opacity correction) · ADR-0021 (2D overlay
+  substrate = first graphics pipeline) · ADR-0022 (vendor HarfBuzz + Unicode shaping;
+  default font **New Computer Modern**, **GFL faces only**) · ADR-0023
+  (libharfbuzz-gpu / **Slug** GPU glyph rendering). D-0031…D-0034; B-0008 scheduled,
+  B-0009 logged. Index current.
+- **✅ ADR-0020 DONE & committed (53d7c84):** `shaders/ray_march.comp` corrects
+  per-sample opacity for step spacing — `α = 1 − (1−a)^(dt·kReferenceSteps)`,
+  `kReferenceSteps = 256` (a file-scope shader const). Density is now invariant to
+  `stepCount` and scales with path length (B-0008). Invariance test +
+  demonstrated teeth in `tests/test_vk_renderer.cpp` ("opacity is invariant to
+  stepCount"). Full suite **245/39**; ASan+UBSan green.
 
-## In Flight (work started, not finished)
-**Nothing in flight.** M5 is complete and committed. The tree builds clean and all
-gates are green.
+## In Flight (work started, not finished) — M6 IMPLEMENT
+ADR-0020 and ADR-0021 are done. **Two ADRs remain** (order: 0022 → 0023; 0023 needs
+both 0021's overlay and 0022's shaping):
+- **✅ ADR-0021 — 2D overlay substrate (DONE, in this session's 2nd M6 commit).**
+  First graphics pipeline: render target has `eColorAttachment`; a classic render
+  pass (`loadOp = eLoad`, alpha blend) draws line/triangle geometry over the volume
+  image in both `render()` (→ readback) and `recordFrame()` (→ blit). Public
+  `iv::vk::Overlay {lines, triangles, transform}`; `render()`/`recordFrame()` take an
+  optional overlay; `Viewer::overlay()` drives it. Shaders `overlay.vert/.frag`.
+  Headless composite test + teeth (disable blend → red); `iv_view --frames` overlay
+  validation-clean. **For glyphs (ADR-0023), emit quads into `Overlay::triangles`;
+  the camera→clip `transform` (world-space box/axes) is M7's to fill.**
+- **ADR-0022 — vendor HarfBuzz + shaping.** Vendor into `third_party/harfbuzz/` at a
+  **pinned commit** (incl. experimental `libharfbuzz-gpu`); build minimal (no
+  ICU/GLib/Cairo/FreeType), `SYSTEM` includes, **not** under `-Werror`; wrap behind
+  `iv::text::Shaper` (UTF-8+font+size → positioned glyphs; no HB type in public API).
+  Bundle **NCM GFL** face(s) (e.g. `NewCMSans10-Regular`, ~0.6 MB) under
+  `third_party/` with license; **exclude** the GPL subset (`NewCM10-Regular`,
+  `NewCMUncial*`, `*Devanagari`). A text build gate keeps the core text-free.
+  (Re-fetch faces: `https://mirrors.ctan.org/fonts/newcomputermodern.zip`, 34 MB,
+  `otf/` dir; download via `python3 urllib` — `curl` is absent in the sandbox.)
+- **ADR-0023 — Slug glyph rendering.** Encode glyph outlines with `libharfbuzz-gpu`
+  (cached per `(font, glyphId)`); draw quads in the ADR-0021 overlay with its **GLSL**
+  Slug shaders compiled through our `glslc`→SPIR-V→embed toolchain (ADR-0011/D-0022).
+  Documented fallback: self-baked MSDF if the experimental API is unworkable.
 
-## Next Action — plan the next milestone (M6)
-The maintainer's stated next goal (verbatim intent): *"features required to make our
-software a usable scientific data plotting library."* Begin DEV_PROCESS at ORIENT →
-**CONTRACT**: propose the M6 scope and its ADRs (Proposed → get them Accepted before
-implementing). Candidate scope to shape with the maintainer (do not assume — this is
-a planning conversation):
-- **Quantitatively-correct opacity** — **B-0008**: per-sample opacity is *not*
-  corrected for ray step spacing `dt`, so `stepCount` changes the displayed density
-  and the early-termination point (D-0030). A scientific tool likely wants density
-  invariant to the sampling rate (`α_dt = 1 − (1 − a)^(dt/refStep)`). Extends
-  ADR-0013.
-- **Spatial reference** — **B-0007**: draw the `[0,1]³` bounding box with axis
-  ticks/labels (maintainer-requested at M4 review).
-- A **high-level "plot this data" API** (today the viewer is two-step: `create()` →
-  build `Volume` from `context()` → `setVolume`); colorbar/phase-legend; value
-  probing; explicit value↔world axis mapping/units; saving views.
-- Possibly **additional colormaps** (B-0005), a transfer-function editor, slicing.
-Pick the slice with the maintainer, write the ADRs, get acceptance, then implement.
+## Next Action (continue M6 IMPLEMENT)
+**Implement ADR-0022 (vendor HarfBuzz + Unicode shaping)** — vendor at a pinned commit
+into `third_party/harfbuzz/` (incl. experimental `libharfbuzz-gpu`), build minimal
+(no ICU/GLib/Cairo/FreeType) as a static lib not under `-Werror`, wrap behind
+`iv::text::Shaper`; bundle an NCM GFL face. Then ADR-0023 (Slug glyphs as overlay
+triangles). Verify each (shaping reference / glyph coverage + teeth), then RECORD
+(CHANGELOG § M6, MILESTONES M6 → Complete, HANDOFF) and the final M6 commit. Commit at
+verified checkpoints (committed so far: 53d7c84 = contract + ADR-0020; the 2nd M6
+commit = ADR-0021).
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.
@@ -94,10 +95,12 @@ Pick the slice with the maintainer, write the ADRs, get acceptance, then impleme
   **per swapchain image** (not per frame) so present never waits a reused semaphore.
   Blit is **component-aware**, so an RGBA8 render lands correctly in a BGRA8
   swapchain (don't "fix" this with a copy).
-- **Perf lever / B-0008:** render cost is largely insensitive to `stepCount` because
-  per-sample opacity ignores `dt` and early-ray termination caps accumulation at a
-  step count independent of N. So the ADR-0019 "8× stepCount" teeth needs
-  `--no-early-term` to bite (D-0030). Don't be surprised that more steps ≈ same FPS.
+- **Opacity correction (ADR-0020, done):** `ray_march.comp` now applies
+  `α = 1 − (1−a)^(dt·kReferenceSteps)` (`kReferenceSteps = 256`), so density is
+  invariant to `stepCount`. Combined with early-ray termination, render cost stays
+  largely `stepCount`-insensitive, so the ADR-0019 perf teeth still needs
+  `--no-early-term` to bite (D-0030). Don't "simplify" the bench teeth back to plain
+  `--step-mult 8`.
 - **Coordinate convention (ADR-0012):** right-handed, **+Y up**, volume = `[0,1]³`,
   **world position = texture coordinate**, image origin top-left.
 - **Volume stores `(Re, Im)`, not `(magnitude, phase)`** (ADR-0015, supersedes

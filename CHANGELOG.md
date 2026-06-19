@@ -4,6 +4,59 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## M7 — Bounding Box, Ticked Axes & Labels
+
+**Status:** Complete (2026-06-19).
+**Governing ADRs:** ADR-0024 (plot coordinate model + declarative axis/label API +
+nice-number tick generation), ADR-0025 (present-path / viewer glyph rendering;
+resolves B-0010), ADR-0026 (world-space bounding box, ticked axes & labels). Decisions
+D-0037…D-0039.
+
+### Added
+- **Declarative plot model** (ADR-0024; `include/iv/plot_axes.hpp`, `src/plot_axes.cpp`;
+  pure host, core `iv`): `iv::PlotAxes { Axis x,y,z; title; visibility toggles;
+  BoxTickStyle; vector<ThroughAxis> }`, per-axis `{min,max,label,unit, majorCount?,
+  minorCount?}` in the caller's data units. `ticksFor` generates nice `{1,2,5}·10ᵏ`
+  major + minor ticks (optional counts); `formatTick` formats major labels (value
+  only; unit on the axis label). `world`/`physical` mapping, `dataCenter`, `axisFor`.
+- **Present-path glyph rendering** (ADR-0025): `Renderer::recordFrame` now draws
+  `Overlay::glyphs`, so the viewer shows text. Persistent glyph resources grown on
+  demand (`ensureFrameGlyphResources`): the atlas buffer/view/descriptor rebuild only
+  on growth, the vertex + atlas data re-upload each frame (D-0038). `drawOverlay` takes
+  glyph handles so headless and present paths share one draw. Closes the
+  ADR-0023/D-0036 headless-only scope.
+- **World-space annotations** (ADR-0026): `iv::vk::viewProjection(camera, aspect)`
+  (`include/iv/vk/view_projection.hpp`) — a world→clip matrix derived from the ADR-0012
+  ray camera (a point projects to the pixel its ray passes through); `projectToPixel`.
+  `iv::text::buildAnnotations` (`include/iv/text/annotations.hpp`,
+  `src/text/annotations.cpp`) fills an `Overlay` from `PlotAxes` + camera: the 12-edge
+  bounding box, tick marks (outer silhouette edges by exact face-facing test, or all
+  faces), through-volume reference axes (data-unit), and screen-space labels placed on
+  the silhouette edge whose outward normal is most "down-and-out", offset outward (so
+  they never overlap the data). `Viewer::setOnFrame` rebuilds the camera-tracking
+  overlay each frame; `iv_view` shows a labeled, navigable plot.
+
+### Verification (teeth)
+- **Tick generation** (ADR-0024): `ticksFor` matches recorded references (`[0,1]→`
+  fifths, `[0,100]→` twenties, `[0,10]→{0,2,…,10}`), minor counts/positions, degenerate/
+  reversed ranges, `formatTick` precision, mapping round-trips. **Teeth** — dropping the
+  nice-number rounding (raw `range/intervals` step) makes `[0,1]→0.25` and `[0,100]→25`
+  → the references go red.
+- **Present-path glyphs** (ADR-0025): a headless `recordFrame` readback renders a white
+  `H` matching the `render()` path. **Teeth** — forcing the present-path glyph count to
+  0 makes only the recordFrame test go red (ink 0) while the headless glyph tests stay
+  green.
+- **View-projection** (ADR-0026): projecting points and reconstructing the ADR-0012 ray
+  confirms each point lies on its ray. **Teeth** — dropping the y-flip breaks ray
+  collinearity → red.
+- **Annotations** (ADR-0026): toggle/count coverage; the labels-outside-silhouette
+  contract (convex-hull point test); a GPU end-to-end render of box + labels over the
+  volume. **Teeth** — offsetting tick labels inward puts 175/264 glyph verts inside the
+  projected box silhouette → the labels-outside check red.
+- Full suite **614 assertions / 59 cases**; ASan+UBSan `ctest` green; text-free
+  (`IV_BUILD_TEXT=OFF`), text-off-viewer, and GLFW-free builds green; `iv_view --frames`
+  (annotated, with a resize) validation-clean.
+
 ## M6 — Text & Annotation Foundation
 
 **Status:** Complete (2026-06-19).

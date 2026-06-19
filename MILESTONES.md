@@ -246,7 +246,7 @@ renderer headlessly via deterministic pixel readback before the window exists.
   Slug glyphs render on the headless path; viewer text is M7 (D-0036, B-0010).
 
 ## M7 — Bounding Box, Ticked Axes & Labels
-- **Status:** Planned (CONTRACT in progress, 2026-06-19).
+- **Status:** Complete (2026-06-19) — locked (§2.5).
 - **Goal:** Turn the M6 foundation into a **spatially labeled plot**: the volume
   **bounding box** with **ticked, labeled axes** (B-0007), drawn over the render in
   **both headless images and the interactive viewer**. A **declarative axis model**
@@ -257,16 +257,16 @@ renderer headlessly via deterministic pixel readback before the window exists.
   Legend/colorbar and a high-level `plot()` facade are **deferred to M8**. (Narrowed
   at CONTRACT from the original "annotations" scope per the maintainer.)
 - **Done when:**
-  - [ ] Caller sets per-axis `{min, max, label, unit}` + a title declaratively; the
-        render maps `[0,1]³` to those physical coordinates.
-  - [ ] The library auto-generates nice **major + minor** ticks per axis (default
+  - [x] Caller sets per-axis `{min, max, label, unit}` + a title declaratively; the
+        render maps `[0,1]³` to those physical coordinates. — ADR-0024.
+  - [x] The library auto-generates nice **major + minor** ticks per axis (default
         counts; caller may override per axis); **major** ticks carry formatted value
-        labels.
-  - [ ] Bounding box + ticked axes render in **world space** (aligned to the volume,
-        ADR-0012 projection) over the render, in **both** `Renderer::render()` and
-        the `Viewer`.
-  - [ ] Axis labels, the title, and tick-value labels render as crisp text in **both**
-        paths (present-path glyph rendering completed — B-0010).
+        labels. — ADR-0024 (`ticksFor`, `formatTick`).
+  - [x] Bounding box + ticked axes render in **world space** (aligned to the volume,
+        ADR-0012 projection via `viewProjection`) over the render, in **both**
+        `Renderer::render()` and the `Viewer`. — ADR-0026.
+  - [x] Axis labels, the title, and tick-value labels render as crisp text in **both**
+        paths (present-path glyph rendering completed — B-0010). — ADR-0025/0026.
 - **Expected ADRs:**
   - Plot **coordinate model** + declarative axis/label API + nice-number tick
     generation (major/minor, optional counts; pure host).
@@ -280,7 +280,11 @@ renderer headlessly via deterministic pixel readback before the window exists.
   box/axis world-space alignment (teeth: perturb the view-projection → the box no
   longer aligns with the rendered volume silhouette → red); label rendering in both
   paths (teeth: skip the label draw → blank → red). Refined at CONTRACT.
-- **Actual ADRs:** _(filled at completion)_
+- **Actual ADRs:** ADR-0024 (plot coordinate model + declarative axis/label API + nice
+  ticks) · ADR-0025 (present-path glyph rendering; resolves B-0010) · ADR-0026
+  (world-space box/ticked axes/labels: `viewProjection` + the annotation builder +
+  `Viewer::setOnFrame`). Decisions D-0037…D-0039. Commits: ec9035b (contract +
+  ADR-0024), 8f19540 (ADR-0025), d305381 (ADR-0026).
 
 ## M8 — Legend/Colorbar & High-Level Plot API
 - **Status:** Planned.

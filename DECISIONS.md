@@ -719,6 +719,8 @@ the same day. Future entries prepend above.)
   the viewer.
 - **Contract link:** extends ADR-0023 (rendering path) under ADR-0021's overlay; no
   new public contract.
+- **Resolved:** M7 / ADR-0025 (8f19540) — `recordFrame` draws `Overlay::glyphs` via
+  persistent, grown-on-demand resources; the viewer shows text.
 
 ### B-0009 — Declare a top-level project LICENSE
 - **Origin:** M6 font vetting (ADR-0022), 2026-06-19 — the repo has no
@@ -760,3 +762,5 @@ the same day. Future entries prepend above.)
   after M5's viewer).
 - **Contract link:** would extend the M4 rendering ADRs (camera/compositing,
   ADR-0012) and/or a future overlay ADR.
+- **Resolved:** M7 / ADR-0026 (d305381) — `iv::text::buildAnnotations` draws the box +
+  ticked, labeled axes (+ through-volume axes) over the volume, both paths.

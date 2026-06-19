@@ -1,53 +1,55 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-19 by the M6 session (Claude / Opus 4.8)
-**Active milestone:** **M6 Complete & locked.** Next: **M7 — Quantitative Plot
-Annotations** (not started; begin at ORIENT → CONTRACT). M1–M6 complete & locked.
+**Last updated:** 2026-06-19 by the M7 session (Claude / Opus 4.8)
+**Active milestone:** **M7 Complete & locked.** Next: **M8 — Legend/Colorbar &
+High-Level Plot API** (not started; begin at ORIENT → CONTRACT). M1–M7 complete & locked.
 
 ## Current State
 **M1–M5 Complete and locked** (MILESTONES.md; CHANGELOG.md): ingest a complex field →
 3D RG32F texture → compute ray-march → offscreen readback **and** interactive GLFW
 viewer, with a perf benchmark (15.3 ms / ~65 FPS @ 512³→720p on the RTX 4070).
 
-**M6 (text & annotation foundation) is Complete & locked** (MILESTONES.md;
-CHANGELOG.md § M6). Four ADRs, four commits, all gates green:
-- **ADR-0020** (53d7c84) — opacity correction in `ray_march.comp`
-  (`α = 1 − (1−a)^(dt·kReferenceSteps)`, `kReferenceSteps = 256`): density invariant
-  to `stepCount` (resolves B-0008).
-- **ADR-0021** (c951229) — 2D overlay substrate, the project's **first graphics
-  pipeline**: a classic render pass (`loadOp = eLoad`, alpha blend) draws line/triangle
-  geometry over the compute image, identical headless + windowed. `iv::vk::Overlay`,
-  `Viewer::overlay()`, `overlay.vert/.frag`.
-- **ADR-0022** (557000b) — vendored **HarfBuzz** (`main` @ `ac0979b`, minimal
-  `harfbuzz_core`) behind `iv::text::Shaper`; **New Computer Modern** GFL face
-  embedded (`bundledFont()`); `iv_text` + `IV_BUILD_TEXT` gate. Pin/licensing in
-  `third_party/{harfbuzz/VENDORING.md,fonts/README.md}`.
-- **ADR-0023** (ee235a4) — **Slug** GPU glyph rendering via `harfbuzz_gpu`:
-  `Shaper::encodeGlyph()`/`glyphAtlas()` (RGBA16I), a third overlay pipeline sampling
-  an R16G16B16A16_SINT texel buffer, `shaders/glyph.{vert,frag}` (`#include`-ing the
-  vendored Slug GLSL), `iv::text::appendText()`. **Headless `render()` path only**;
-  viewer text is M7 (D-0036, B-0010).
+**M6 (text & annotation foundation) is Complete & locked** (CHANGELOG.md § M6):
+opacity correction (ADR-0020), the 2D overlay substrate / first graphics pipeline
+(ADR-0021), vendored **HarfBuzz** + `iv::text::Shaper` + bundled **New Computer
+Modern** GFL face (ADR-0022), and **Slug** GPU glyph rendering (ADR-0023, headless).
+Decisions D-0031…D-0036.
 
-Decisions D-0031…D-0036; Backlog B-0008 (resolved), B-0009, B-0010. ADR index current.
-Gates at close: full suite **341/49**; ASan+UBSan `ctest` green; text-free
-(`IV_BUILD_TEXT=OFF`) + GLFW-free builds green; no HarfBuzz type in any public header;
-`iv_view --frames` validation-clean.
+**M7 (bounding box, ticked axes & labels) is Complete & locked** (CHANGELOG.md § M7).
+Three ADRs, three commits, all gates green:
+- **ADR-0024** (ec9035b) — declarative **`iv::PlotAxes`** model (pure host, core `iv`:
+  `include/iv/plot_axes.hpp`): per-axis `{min,max,label,unit, counts?}` in data units,
+  visibility toggles, `BoxTickStyle`, `ThroughAxis`; nice `{1,2,5}` major+minor
+  `ticksFor`, value-only `formatTick`.
+- **ADR-0025** (8f19540) — **present-path glyph rendering**: `recordFrame` draws
+  `Overlay::glyphs` (persistent, grown-on-demand `ensureFrameGlyphResources`; atlas
+  rebuilt on growth, vertices re-uploaded each frame, D-0038). `drawOverlay` takes
+  glyph handles. Resolves B-0010; the viewer shows text.
+- **ADR-0026** (d305381) — **world-space annotations**: `iv::vk::viewProjection` (core
+  `iv`, matches the ADR-0012 ray camera) via `Overlay::transform`; `iv::text::
+  buildAnnotations` fills an Overlay (box + silhouette/all-faces ticks + through-axes +
+  silhouette-edge labels offset outward); `Viewer::setOnFrame` rebuilds it per frame.
+  `iv_view` is now a labeled, navigable plot.
+
+Decisions D-0031…D-0039; Backlog B-0008/B-0010 resolved, B-0007 (resolved by M7),
+B-0009 open. ADR index current (ADR-0001…0026 Accepted). Gates at M7 close: full suite
+**614/59**; ASan+UBSan `ctest` green; text-free / text-off-viewer / GLFW-free builds
+green; no HarfBuzz type in any public header; `iv_view --frames` (annotated)
+validation-clean.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** M6 is closed; M7 has not started. Working tree is clean at
-`ee235a4` (ADR-0023) + the M6 RECORD commit.
+**Nothing in flight.** M7 is closed; M8 has not started. Working tree is clean at
+`d305381` (ADR-0026) + the M7 RECORD commit.
 
-## Next Action (begin M7)
-**Start M7 — Quantitative Plot Annotations** at ORIENT → CONTRACT (DEV_PROCESS §3.0,
-§2). M7 turns the M6 foundation into a labeled, publication-quality plot. Per
-MILESTONES.md M7 + B-0007: a world-space **bounding box** + **ticked axes** (using the
-ADR-0012 camera→clip transform — `Overlay::transform` is ready for this), a
-**legend/colorbar** for the magnitude transfer function + phase colormap,
-**coordinate ranges/units**, and a **public label API**. First M7 deliverable that
-unblocks the rest: **present-path (viewer) Slug glyph rendering (B-0010)** so labels
-show interactively — persist the glyph vertex/atlas/descriptor across the in-flight
-frame (like `frameOverlayBuf_`), reusing `buildGlyphResources`. Write the M7 ADRs
-(Proposed → Accepted gate) before implementing. LaTeX math is still deferred.
+## Next Action (begin M8)
+**Start M8 — Legend/Colorbar & High-Level Plot API** at ORIENT → CONTRACT (DEV_PROCESS
+§3.0, §2). Per MILESTONES.md M8: a **legend/colorbar** (the phase→color wheel + the
+magnitude→opacity scale, with labeled bounds, matching the ADR-0013 transfer function
+/ ADR-0014 colormap) and a **high-level `plot(field, dims, options)` facade** over the
+two-step volume/viewer setup. Reuse: the ADR-0021 overlay (lines/triangles/glyphs) for
+the colorbar swatch + labels, `iv::text::buildAnnotations`/`appendText` for legend
+text, `iv::PlotAxes`-style declarative options. Write the M8 ADRs (Proposed → Accepted
+gate) before implementing. LaTeX math is still deferred.
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.
@@ -95,6 +97,19 @@ frame (like `frameOverlayBuf_`), reusing `buildGlyphResources`. Write the M7 ADR
   **headless `render()` path only**; the present path passes `nullptr` glyphs
   (B-0010). The glyph pipeline is in core `iv` (no HarfBuzz link), so it builds with
   `IV_BUILD_TEXT=OFF` — don't make it depend on `iv_text`.
+- **Annotations (ADR-0024/0026) gotchas:** `iv::vk::viewProjection` must stay
+  **consistent with the ADR-0012 ray camera** (the `[viewproj]` collinearity test is
+  the guard — don't "simplify" the matrix or drop the y-down/top-left flip). It is
+  **column-major** for the overlay shader. `iv::text::buildAnnotations` (in `iv_text`,
+  needs a `Shaper`) fills an `Overlay`: box/ticks/through-axes are **world-space**
+  (via `Overlay::transform`); **labels are screen-space** glyphs (NDC-baked,
+  `appendText`) anchored to the **box silhouette** (exact face-facing test) and offset
+  **outward** — the outward offset is load-bearing for no-data-overlap (the
+  `[annot]` "labels outside silhouette" test is the guard). The viewer tracks the
+  camera via `Viewer::setOnFrame` (rebuilds the overlay each frame, after
+  `applyCamera`); `iv_view` links `iv_text` only when `IV_BUILD_TEXT` (`#ifdef
+  IV_VIEW_TEXT`, else a simple overlay). `PlotAxes`/`ticksFor` are pure host (core
+  `iv`) — log axes / custom formatters are out of scope (ADR-0024).
 - **Viewer lifetime is pimpl-ordered** (`src/vk/viewer.cpp` `Viewer::Impl`): member
   declaration order is load-bearing (GLFW lib guard first → destroyed last; window
   after the Context; all device children before the Context). `~Impl` waits the
@@ -148,17 +163,19 @@ frame (like `frameOverlayBuf_`), reusing `buildGlyphResources`. Write the M7 ADR
 
 ## Pointers
 - Governing process: `DEV_PROCESS.md`.
-- Milestone arc: `MILESTONES.md` (M1–M6 complete & locked; M7 next).
-- Contracts: `docs/adr/INDEX.md` — ADR-0001…0023 Accepted (ADR-0009 superseded by
+- Milestone arc: `MILESTONES.md` (M1–M7 complete & locked; M8 next).
+- Contracts: `docs/adr/INDEX.md` — ADR-0001…0026 Accepted (ADR-0009 superseded by
   ADR-0015).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0036), Backlog B-0001…B-0010.
-- M1–M6 work + teeth: `CHANGELOG.md`.
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0039), Backlog B-0001…B-0010.
+- M1–M7 work + teeth: `CHANGELOG.md`.
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs via the owned
   `examples/png.hpp`, D-0024; gitignored `gallery/`); `iv_view` (interactive
   viewer); `iv_bench` (perf).
 - Code: host model `include/iv/volume.hpp`, `include/iv/orbit_camera.hpp`,
-  `src/volume.cpp`; Vulkan `include/iv/vk/`, `src/vk/` (commands, memory, shaders,
-  context, offscreen, volume, renderer, viewer); text `include/iv/text/`, `src/text/`
-  (shaper, bundled_font); vendored `third_party/harfbuzz/` (pin in VENDORING.md),
-  `third_party/fonts/`; shaders `shaders/`; generated `colormap_lut.hpp`; benchmark
-  `tools/bench.cpp`; tests `tests/test_*.cpp`.
+  `include/iv/plot_axes.hpp` (ADR-0024), `src/volume.cpp`, `src/plot_axes.cpp`; Vulkan
+  `include/iv/vk/`, `src/vk/` (commands, memory, shaders, context, offscreen, volume,
+  renderer, **view_projection** (ADR-0026), viewer); text `include/iv/text/`,
+  `src/text/` (shaper, bundled_font, text_layout, **annotations** (ADR-0026)); vendored
+  `third_party/harfbuzz/` (pin in VENDORING.md), `third_party/fonts/`; shaders
+  `shaders/`; generated `colormap_lut.hpp`; benchmark `tools/bench.cpp`; tests
+  `tests/test_*.cpp`.

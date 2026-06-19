@@ -55,6 +55,42 @@ void writeV3(float (&dst)[4], V3 v) {
     dst[3] = 0.0f;
 }
 
+// Fill the std140 UBO from the camera / transfer-function / colormap params and the
+// volume's magnitude range, for a width x height image (ADR-0012/0013/0014). Shared
+// by the offscreen render() and the present-path recordFrame().
+Ubo fillUbo(const RenderParams& params, std::uint32_t width, std::uint32_t height,
+            MagnitudeRange range) {
+    const V3 eye{params.eye[0], params.eye[1], params.eye[2]};
+    const V3 target{params.target[0], params.target[1], params.target[2]};
+    const V3 up{params.up[0], params.up[1], params.up[2]};
+    const V3 w = normalize(eye - target);
+    const V3 u = normalize(cross(up, w));
+    const V3 v = cross(w, u);
+    const float aspect = static_cast<float>(width) / static_cast<float>(height);
+    const float halfH = std::tan(params.vfovRadians * 0.5f);
+    const float halfW = aspect * halfH;
+
+    Ubo data{};
+    writeV3(data.eye, eye);
+    writeV3(data.topLeft, u * (-halfW) + v * halfH - w);
+    writeV3(data.horizontal, u * (2.0f * halfW));
+    writeV3(data.vertical, v * (2.0f * halfH));
+    data.background[0] = params.background[0];
+    data.background[1] = params.background[1];
+    data.background[2] = params.background[2];
+    data.background[3] = params.background[3];
+    data.range[0] = range.minPositive;
+    data.range[1] = range.max;
+    data.range[2] = params.densityScale;
+    data.range[3] = params.alphaTermination;
+    data.ints[0] = width;
+    data.ints[1] = height;
+    data.ints[2] = params.stepCount;
+    data.ints[3] = params.opacityMode;
+    data.modes[0] = params.colormapMode;
+    return data;
+}
+
 } // namespace
 
 void Renderer::checkAffinity() const noexcept {
@@ -374,39 +410,7 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
         uboMem = *std::move(mem);
     }
     {
-        const V3 eye{params.eye[0], params.eye[1], params.eye[2]};
-        const V3 target{params.target[0], params.target[1], params.target[2]};
-        const V3 up{params.up[0], params.up[1], params.up[2]};
-        const V3 w = normalize(eye - target);
-        const V3 u = normalize(cross(up, w));
-        const V3 v = cross(w, u);
-        const float aspect = static_cast<float>(width) / static_cast<float>(height);
-        const float halfH = std::tan(params.vfovRadians * 0.5f);
-        const float halfW = aspect * halfH;
-        const V3 horizontal = u * (2.0f * halfW);
-        const V3 vertical = v * (2.0f * halfH);
-        const V3 topLeft = u * (-halfW) + v * halfH - w;
-        const MagnitudeRange mr = volume.magnitudeRange();
-
-        Ubo data{};
-        writeV3(data.eye, eye);
-        writeV3(data.topLeft, topLeft);
-        writeV3(data.horizontal, horizontal);
-        writeV3(data.vertical, vertical);
-        data.background[0] = params.background[0];
-        data.background[1] = params.background[1];
-        data.background[2] = params.background[2];
-        data.background[3] = params.background[3];
-        data.range[0] = mr.minPositive;
-        data.range[1] = mr.max;
-        data.range[2] = params.densityScale;
-        data.range[3] = params.alphaTermination;
-        data.ints[0] = width;
-        data.ints[1] = height;
-        data.ints[2] = params.stepCount;
-        data.ints[3] = params.opacityMode;
-        data.modes[0] = params.colormapMode;
-
+        const Ubo data = fillUbo(params, width, height, volume.magnitudeRange());
         auto mapped = take(device.mapMemory(uboMem.get(), 0, sizeof(Ubo)), "mapMemory(ubo)");
         if (!mapped) {
             return std::unexpected(std::move(mapped).error());
@@ -452,43 +456,7 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
         }
         set = (*m).front();
     }
-    {
-        const auto volInfo = vkh::DescriptorImageInfo{}
-                                 .setSampler(volumeSampler_.get())
-                                 .setImageView(volume.view())
-                                 .setImageLayout(vkh::ImageLayout::eShaderReadOnlyOptimal);
-        const auto outInfo = vkh::DescriptorImageInfo{}.setImageView(view.get()).setImageLayout(
-            vkh::ImageLayout::eGeneral);
-        const auto uboInfo =
-            vkh::DescriptorBufferInfo{}.setBuffer(ubo.get()).setOffset(0).setRange(sizeof(Ubo));
-        const auto lutInfo = vkh::DescriptorImageInfo{}
-                                 .setSampler(colormapSampler_.get())
-                                 .setImageView(lutView_.get())
-                                 .setImageLayout(vkh::ImageLayout::eShaderReadOnlyOptimal);
-        const std::array<vkh::WriteDescriptorSet, 4> writes{{
-            vkh::WriteDescriptorSet{}
-                .setDstSet(set)
-                .setDstBinding(0u)
-                .setDescriptorType(vkh::DescriptorType::eCombinedImageSampler)
-                .setImageInfo(volInfo),
-            vkh::WriteDescriptorSet{}
-                .setDstSet(set)
-                .setDstBinding(1u)
-                .setDescriptorType(vkh::DescriptorType::eStorageImage)
-                .setImageInfo(outInfo),
-            vkh::WriteDescriptorSet{}
-                .setDstSet(set)
-                .setDstBinding(2u)
-                .setDescriptorType(vkh::DescriptorType::eUniformBuffer)
-                .setBufferInfo(uboInfo),
-            vkh::WriteDescriptorSet{}
-                .setDstSet(set)
-                .setDstBinding(3u)
-                .setDescriptorType(vkh::DescriptorType::eCombinedImageSampler)
-                .setImageInfo(lutInfo),
-        }};
-        device.updateDescriptorSets(writes, nullptr);
-    }
+    writeComputeDescriptors(set, volume.view(), view.get(), ubo.get());
 
     // --- Record: storage -> general, dispatch, -> transferSrc, copy to staging ---
     const vkh::Image img = image.get();
@@ -540,6 +508,231 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
     device.unmapMemory(stagingMem.get());
 
     return ImageReadback(width, height, std::move(bytes));
+}
+
+void Renderer::writeComputeDescriptors(vkh::DescriptorSet set, vkh::ImageView volumeView,
+                                       vkh::ImageView storageView, vkh::Buffer ubo) {
+    const auto volInfo = vkh::DescriptorImageInfo{}
+                             .setSampler(volumeSampler_.get())
+                             .setImageView(volumeView)
+                             .setImageLayout(vkh::ImageLayout::eShaderReadOnlyOptimal);
+    const auto outInfo =
+        vkh::DescriptorImageInfo{}.setImageView(storageView).setImageLayout(vkh::ImageLayout::eGeneral);
+    const auto uboInfo =
+        vkh::DescriptorBufferInfo{}.setBuffer(ubo).setOffset(0).setRange(sizeof(Ubo));
+    const auto lutInfo = vkh::DescriptorImageInfo{}
+                             .setSampler(colormapSampler_.get())
+                             .setImageView(lutView_.get())
+                             .setImageLayout(vkh::ImageLayout::eShaderReadOnlyOptimal);
+    const std::array<vkh::WriteDescriptorSet, 4> writes{{
+        vkh::WriteDescriptorSet{}
+            .setDstSet(set)
+            .setDstBinding(0u)
+            .setDescriptorType(vkh::DescriptorType::eCombinedImageSampler)
+            .setImageInfo(volInfo),
+        vkh::WriteDescriptorSet{}
+            .setDstSet(set)
+            .setDstBinding(1u)
+            .setDescriptorType(vkh::DescriptorType::eStorageImage)
+            .setImageInfo(outInfo),
+        vkh::WriteDescriptorSet{}
+            .setDstSet(set)
+            .setDstBinding(2u)
+            .setDescriptorType(vkh::DescriptorType::eUniformBuffer)
+            .setBufferInfo(uboInfo),
+        vkh::WriteDescriptorSet{}
+            .setDstSet(set)
+            .setDstBinding(3u)
+            .setDescriptorType(vkh::DescriptorType::eCombinedImageSampler)
+            .setImageInfo(lutInfo),
+    }};
+    device_.updateDescriptorSets(writes, nullptr);
+}
+
+Status Renderer::ensureFrameResources(const Volume& volume, vkh::Extent2D extent) {
+    // Nothing relevant changed since the last frame: reuse everything (ADR-0017).
+    if (frameImage_ && frameExtent_ == extent && frameVolumeView_ == volume.view()) {
+        return {};
+    }
+    const vkh::Device device = device_;
+
+    // (Re)create the storage image + view at the new extent. Reset the old view
+    // before the old image is destroyed (move-assign), and free the old memory only
+    // after its image is gone (member order makes the latter automatic).
+    {
+        auto m = take(device.createImage(
+                          vkh::ImageCreateInfo{}
+                              .setImageType(vkh::ImageType::e2D)
+                              .setFormat(kOutputFormat)
+                              .setExtent(vkh::Extent3D{extent.width, extent.height, 1u})
+                              .setMipLevels(1u)
+                              .setArrayLayers(1u)
+                              .setSamples(vkh::SampleCountFlagBits::e1)
+                              .setTiling(vkh::ImageTiling::eOptimal)
+                              .setUsage(vkh::ImageUsageFlagBits::eStorage
+                                        | vkh::ImageUsageFlagBits::eTransferSrc)
+                              .setInitialLayout(vkh::ImageLayout::eUndefined)),
+                      "createImage(frame)");
+        if (!m) {
+            return std::unexpected(std::move(m).error());
+        }
+        frameView_.reset();
+        frameImage_ = Unique<vkh::Image>(*m, [device](vkh::Image h) { device.destroyImage(h); });
+    }
+    {
+        auto mem = allocateAndBindImage(device, physicalDevice_, frameImage_.get(),
+                                        vkh::MemoryPropertyFlagBits::eDeviceLocal, "frame storage");
+        if (!mem) {
+            return std::unexpected(std::move(mem).error());
+        }
+        frameImageMem_ = *std::move(mem);
+    }
+    {
+        auto m = take(device.createImageView(
+                          vkh::ImageViewCreateInfo{}
+                              .setImage(frameImage_.get())
+                              .setViewType(vkh::ImageViewType::e2D)
+                              .setFormat(kOutputFormat)
+                              .setSubresourceRange(vkh::ImageSubresourceRange{
+                                  vkh::ImageAspectFlagBits::eColor, 0u, 1u, 0u, 1u})),
+                      "createImageView(frame)");
+        if (!m) {
+            return std::unexpected(std::move(m).error());
+        }
+        frameView_ =
+            Unique<vkh::ImageView>(*m, [device](vkh::ImageView h) { device.destroyImageView(h); });
+    }
+
+    // The UBO is allocated once and persistently mapped (host-coherent). recordFrame
+    // memcpys into frameUboMapped_ each frame; no per-frame map/unmap.
+    if (!frameUbo_) {
+        {
+            auto m = take(device.createBuffer(vkh::BufferCreateInfo{}
+                                                  .setSize(sizeof(Ubo))
+                                                  .setUsage(vkh::BufferUsageFlagBits::eUniformBuffer)
+                                                  .setSharingMode(vkh::SharingMode::eExclusive)),
+                          "createBuffer(frame ubo)");
+            if (!m) {
+                return std::unexpected(std::move(m).error());
+            }
+            frameUbo_ =
+                Unique<vkh::Buffer>(*m, [device](vkh::Buffer h) { device.destroyBuffer(h); });
+        }
+        {
+            auto mem = allocateAndBindBuffer(device, physicalDevice_, frameUbo_.get(),
+                                             vkh::MemoryPropertyFlagBits::eHostVisible
+                                                 | vkh::MemoryPropertyFlagBits::eHostCoherent,
+                                             "frame uniform buffer");
+            if (!mem) {
+                return std::unexpected(std::move(mem).error());
+            }
+            frameUboMem_ = *std::move(mem);
+        }
+        {
+            auto mapped =
+                take(device.mapMemory(frameUboMem_.get(), 0, sizeof(Ubo)), "mapMemory(frame ubo)");
+            if (!mapped) {
+                return std::unexpected(std::move(mapped).error());
+            }
+            frameUboMapped_ = *mapped; // persistently mapped; freed (implicitly unmapped) at teardown
+        }
+    }
+
+    // One descriptor set, allocated once; its bindings are rewritten below whenever
+    // the storage view (or volume) changes.
+    if (!frameDescriptorPool_) {
+        const std::array<vkh::DescriptorPoolSize, 3> sizes{{
+            {vkh::DescriptorType::eCombinedImageSampler, 2u},
+            {vkh::DescriptorType::eStorageImage, 1u},
+            {vkh::DescriptorType::eUniformBuffer, 1u},
+        }};
+        {
+            auto m = take(device.createDescriptorPool(
+                              vkh::DescriptorPoolCreateInfo{}.setMaxSets(1u).setPoolSizes(sizes)),
+                          "createDescriptorPool(frame)");
+            if (!m) {
+                return std::unexpected(std::move(m).error());
+            }
+            frameDescriptorPool_ = Unique<vkh::DescriptorPool>(
+                *m, [device](vkh::DescriptorPool h) { device.destroyDescriptorPool(h); });
+        }
+        const vkh::DescriptorSetLayout sl = setLayout_.get();
+        auto m = take(device.allocateDescriptorSets(vkh::DescriptorSetAllocateInfo{}
+                                                        .setDescriptorPool(frameDescriptorPool_.get())
+                                                        .setSetLayouts(sl)),
+                      "allocateDescriptorSets(frame)");
+        if (!m) {
+            return std::unexpected(std::move(m).error());
+        }
+        frameSet_ = (*m).front();
+    }
+
+    writeComputeDescriptors(frameSet_, volume.view(), frameView_.get(), frameUbo_.get());
+    frameExtent_ = extent;
+    frameVolumeView_ = volume.view();
+    return {};
+}
+
+Status Renderer::recordFrame(vkh::CommandBuffer cmd, const Volume& volume,
+                             const RenderParams& params, vkh::Image dstImage,
+                             vkh::Extent2D dstExtent) {
+    checkAffinity();
+    IV_ASSERT(dstExtent.width > 0u && dstExtent.height > 0u,
+              "Renderer::recordFrame: extent must be non-zero");
+    if (auto s = ensureFrameResources(volume, dstExtent); !s) {
+        return std::unexpected(std::move(s).error());
+    }
+
+    // Update the UBO in place (persistently mapped, host-coherent — no flush needed).
+    const Ubo data = fillUbo(params, dstExtent.width, dstExtent.height, volume.magnitudeRange());
+    std::memcpy(frameUboMapped_, &data, sizeof(Ubo));
+
+    const vkh::Image storage = frameImage_.get();
+    const std::uint32_t gx = (dstExtent.width + kLocalSize - 1u) / kLocalSize;
+    const std::uint32_t gy = (dstExtent.height + kLocalSize - 1u) / kLocalSize;
+
+    // storage: undefined -> general (compute writes the whole image, so prior
+    // contents are discarded).
+    cmd.pipelineBarrier(
+        vkh::PipelineStageFlagBits::eTopOfPipe, vkh::PipelineStageFlagBits::eComputeShader,
+        vkh::DependencyFlags{}, nullptr, nullptr,
+        imageBarrier(storage, vkh::ImageLayout::eUndefined, vkh::ImageLayout::eGeneral,
+                     vkh::AccessFlagBits::eNone, vkh::AccessFlagBits::eShaderWrite));
+    cmd.bindPipeline(vkh::PipelineBindPoint::eCompute, pipeline_.get());
+    cmd.bindDescriptorSets(vkh::PipelineBindPoint::eCompute, pipelineLayout_.get(), 0u, frameSet_,
+                           nullptr);
+    cmd.dispatch(gx, gy, 1u);
+    // storage: general -> transferSrc for the blit.
+    cmd.pipelineBarrier(
+        vkh::PipelineStageFlagBits::eComputeShader, vkh::PipelineStageFlagBits::eTransfer,
+        vkh::DependencyFlags{}, nullptr, nullptr,
+        imageBarrier(storage, vkh::ImageLayout::eGeneral, vkh::ImageLayout::eTransferSrcOptimal,
+                     vkh::AccessFlagBits::eShaderWrite, vkh::AccessFlagBits::eTransferRead));
+    // dst: undefined -> transferDst (its prior contents are discarded by contract).
+    cmd.pipelineBarrier(
+        vkh::PipelineStageFlagBits::eTopOfPipe, vkh::PipelineStageFlagBits::eTransfer,
+        vkh::DependencyFlags{}, nullptr, nullptr,
+        imageBarrier(dstImage, vkh::ImageLayout::eUndefined, vkh::ImageLayout::eTransferDstOptimal,
+                     vkh::AccessFlagBits::eNone, vkh::AccessFlagBits::eTransferWrite));
+
+    // Blit storage -> dst at 1:1. Blit (not copy) is component-aware, so it converts
+    // R8G8B8A8 -> a BGRA swapchain format with correct colors; nearest since the
+    // extents are identical.
+    const std::array<vkh::Offset3D, 2> bounds{
+        vkh::Offset3D{0, 0, 0},
+        vkh::Offset3D{static_cast<std::int32_t>(dstExtent.width),
+                      static_cast<std::int32_t>(dstExtent.height), 1}};
+    const auto blit = vkh::ImageBlit{}
+                          .setSrcSubresource(vkh::ImageSubresourceLayers{
+                              vkh::ImageAspectFlagBits::eColor, 0u, 0u, 1u})
+                          .setSrcOffsets(bounds)
+                          .setDstSubresource(vkh::ImageSubresourceLayers{
+                              vkh::ImageAspectFlagBits::eColor, 0u, 0u, 1u})
+                          .setDstOffsets(bounds);
+    cmd.blitImage(storage, vkh::ImageLayout::eTransferSrcOptimal, dstImage,
+                  vkh::ImageLayout::eTransferDstOptimal, blit, vkh::Filter::eNearest);
+    // Leave dst in eTransferDstOptimal; the caller transitions it to ePresentSrcKHR.
+    return {};
 }
 
 } // namespace iv::vk

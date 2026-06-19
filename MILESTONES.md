@@ -169,26 +169,28 @@ renderer headlessly via deterministic pixel readback before the window exists.
   convention). Teeth demonstrated in `CHANGELOG.md` (§ M4), evidence 1–4.
 
 ## M5 — Interactive Viewer & Performance Contract
-- **Status:** Planned
+- **Status:** Complete (2026-06-19) — locked (§2.5).
 - **Goal:** A thin GLFW-based viewer over the offscreen core: surface +
   swapchain + present loop, orbit/zoom camera controls, and frame pacing —
   meeting interactive framerates for volumes of several hundred voxels per side,
   pinned by a benchmark. (May split per §2.2 if its ADRs exceed ~5.)
 - **Done when:**
-  - [ ] GLFW window + Vulkan surface + swapchain + present loop run.
-  - [ ] Orbit/zoom camera controls drive the existing renderer interactively.
-  - [ ] A present loop runs N frames validation-clean.
-  - [ ] A benchmark demonstrates the stated FPS target at a stated volume size
-        on a stated hardware class.
-- **Expected ADRs:**
-  - Windowing/surface dependency & platform integration (GLFW; the new
-    third-party dependency, §1.1).
-  - Swapchain/present contract (format, present mode, resize/recreation policy).
-  - Interaction/camera-control API (public surface for the viewer).
-  - Performance contract (target FPS, volume size, hardware class, sampling
-    budget) with the benchmark that enforces it.
-- **Tests with teeth:** Present loop runs validation-clean for N frames;
-  benchmark within the ADR-stated bound. Teeth shown by fault injection: a
-  deliberately oversampled march step blows the frame budget → red; the
-  contracted step → green.
-- **Actual ADRs:** _(filled at completion)_
+  - [x] GLFW window + Vulkan surface + swapchain + present loop run
+        (`iv::vk::Viewer`; ADR-0016/0017).
+  - [x] Orbit/zoom camera controls drive the existing renderer interactively
+        (`iv::OrbitCamera`, left-drag/scroll/keys; ADR-0018).
+  - [x] A present loop runs N frames validation-clean (`iv_view --frames 30`,
+        validation-CLEAN incl. a forced swapchain recreation; ADR-0017).
+  - [x] A benchmark demonstrates the stated FPS target at a stated volume size on
+        a stated hardware class (`iv_bench`: median 15.3 ms / ~65 FPS at 512³ →
+        1280×720 on the RTX 4070; ADR-0019).
+- **Tests with teeth:** Present loop runs validation-clean for N frames; benchmark
+  within the ADR-stated bound. **Demonstrated** (CHANGELOG § M5): benchmark teeth
+  via `--no-early-term --step-mult 8` → median 34.3 ms → red (plain 8× does not
+  bite because early-ray termination caps cost independent of `stepCount` — D-0030 /
+  B-0008); present-path teeth via dropping the `→ePresentSrcKHR` barrier → validation
+  error; camera-clamp teeth via removing the pitch clamp → red.
+- **Actual ADRs:** ADR-0016 (windowing/GLFW & presentation Context), ADR-0017
+  (swapchain & present loop), ADR-0018 (interaction & camera control), ADR-0019
+  (performance contract & benchmark). Decisions D-0026…D-0030; Backlog B-0008.
+- **Note:** completed exactly as scoped (4 ADRs, ≤ ~5 per §2.2; no split).

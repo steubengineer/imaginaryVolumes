@@ -120,6 +120,22 @@ bool deviceUsable(vkh::PhysicalDevice pd) {
     return pd.getProperties().apiVersion >= kApiVersion && graphicsFamily(pd).has_value();
 }
 
+bool supportsDeviceExtensions(vkh::PhysicalDevice pd, const std::vector<const char*>& exts) {
+    if (exts.empty()) {
+        return true;
+    }
+    const auto r = pd.enumerateDeviceExtensionProperties();
+    if (r.result != vkh::Result::eSuccess) {
+        return false;
+    }
+    for (const char* want : exts) {
+        if (!hasExtension(r.value, want)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 void Context::checkAffinity() const noexcept {
@@ -128,6 +144,10 @@ void Context::checkAffinity() const noexcept {
 }
 
 Result<Context> Context::create() {
+    return create(ContextConfig{});
+}
+
+Result<Context> Context::create(const ContextConfig& config) {
     // 1. Instance (+ validation layer/debug-utils in Debug, best-effort).
     std::vector<const char*> layers;
     std::vector<const char*> extensions;
@@ -147,6 +167,12 @@ Result<Context> Context::create() {
             std::fprintf(stderr,
                          "[iv] validation unavailable; continuing without it (ADR-0005)\n");
         }
+    }
+
+    // Extra instance extensions requested by the caller (e.g. GLFW surface extensions
+    // for presentation; ADR-0016).
+    for (const char* ext : config.instanceExtensions) {
+        extensions.push_back(ext);
     }
 
     // The validation counter and the pNext create/destroy messenger must exist
@@ -214,7 +240,9 @@ Result<Context> Context::create() {
 
     std::optional<std::uint32_t> chosen;
     if (const auto forced = envDeviceIndex()) {
-        if (*forced < static_cast<std::uint32_t>(devices.size()) && deviceUsable(devices[*forced])) {
+        if (*forced < static_cast<std::uint32_t>(devices.size())
+            && deviceUsable(devices[*forced])
+            && supportsDeviceExtensions(devices[*forced], config.deviceExtensions)) {
             chosen = *forced;
         } else {
             return make_error(Errc::device_unavailable,
@@ -224,7 +252,8 @@ Result<Context> Context::create() {
         int bestScore = -1;
         std::uint64_t bestMem = 0;
         for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(devices.size()); ++i) {
-            if (!deviceUsable(devices[i])) {
+            if (!deviceUsable(devices[i])
+                || !supportsDeviceExtensions(devices[i], config.deviceExtensions)) {
                 continue;
             }
             const int score = deviceTypeScore(devices[i].getProperties().deviceType);
@@ -249,7 +278,9 @@ Result<Context> Context::create() {
     const auto queueInfo = vkh::DeviceQueueCreateInfo{}
                                .setQueueFamilyIndex(family)
                                .setQueuePriorities(priority);
-    const auto deviceInfo = vkh::DeviceCreateInfo{}.setQueueCreateInfos(queueInfo);
+    const auto deviceInfo = vkh::DeviceCreateInfo{}
+                                .setQueueCreateInfos(queueInfo)
+                                .setPEnabledExtensionNames(config.deviceExtensions);
     auto deviceR = take(phys.createDevice(deviceInfo), "createDevice");
     if (!deviceR) {
         return std::unexpected(std::move(deviceR).error());

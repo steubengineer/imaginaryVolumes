@@ -10,6 +10,90 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0030 — M5 benchmark result + teeth: early-ray termination caps cost (stepCount-insensitive)
+- **Date / milestone:** 2026-06-19 / M5 (IMPLEMENT)
+- **Result:** The ADR-0019 contract is **met**: median **15.3 ms (~65 FPS)** for one
+  512³ → 1280×720 `render()` on the RTX 4070 (Release, validation off); min 12.8,
+  max 21.4 ms over N=30.
+- **Finding:** ADR-0019's literal teeth — "8× the default `stepCount` → median >
+  33.3 ms" — does **not** bite: 8× left the median ≈ 13 ms unchanged. Cause: the
+  per-sample opacity (ADR-0013) is **independent of the step spacing `dt`**, and
+  early-ray termination breaks at accumulated α ≥ `alphaTermination`. So any ray
+  with nonzero opacity saturates after a roughly fixed *number of steps* regardless
+  of N — raising `stepCount` only refines `dt`, adding no iterations before
+  termination. Only (measure-zero) exactly-zero-opacity rays run all N. Hence render
+  cost is insensitive to `stepCount` alone.
+- **Decision:** Demonstrate the benchmark's teeth by **disabling early-ray
+  termination** (`iv_bench --no-early-term`, `alphaTermination` set unreachable) so
+  every ray marches all `stepCount` samples; then `--no-early-term --step-mult 8`
+  takes the median **11.7 ms → 34.3 ms (29.2 FPS) → assertion FAIL (red)**. This
+  faithfully shows the benchmark constrains the per-ray march budget; the default
+  contract (early-term on) passes. (The `--frames`/`--step-mult`/`--no-early-term`/
+  `--advisory` knobs live in `tools/bench.cpp`.)
+- **Contract link:** ADR-0019 — the bound itself is unchanged and met; only its
+  Verification "8× stepCount" recipe is refined (needs `--no-early-term`). The
+  underlying `dt`-independent opacity is logged as **B-0008**.
+
+### D-0029 — M5 performance contract: ≥30 FPS @ 512³, 720p, RTX 4070-class
+- **Date / milestone:** 2026-06-19 / M5 (CONTRACT) — maintainer decision
+- **Choice:** The operating point that defines "interactive framerates for several
+  hundred voxels per side", and how to enforce it.
+- **Decision:** Contract = median ≤ 33.3 ms (≥30 FPS) for one 512³ → 1280×720
+  `Renderer::render()` on an RTX 4070-class GPU. Enforced by a headless, **opt-in**
+  benchmark (`iv_bench` / `[!benchmark]`): warm-up + N≥30 timed renders, assert the
+  median bound. Excluded from the default `ctest` (hardware-dependent).
+- **Rationale:** Turns the founding goal into a checkable number + regression
+  guard; headless render-time is a clean, conservative proxy for the vsync-capped
+  windowed present.
+- **Contract impact:** ADR-0019 (Proposed).
+- **Deferred alternatives:** GPU-timestamp timing; a default perf gate (flaky
+  across hardware).
+
+### D-0028 — M5 interaction: OrbitCamera (host) + Viewer (orbit/zoom/keys)
+- **Date / milestone:** 2026-06-19 / M5 (CONTRACT)
+- **Choice:** The camera-control model and public viewer API.
+- **Decision:** `iv::OrbitCamera` (pure host: target/distance/yaw/pitch, clamped
+  pitch + distance, `eye()` per ADR-0012) drives `RenderParams`; `iv::vk::Viewer`
+  maps left-drag→orbit, scroll→zoom, keys (Esc/L/C/R), with `run()` /
+  `runFrames(n)`. Pan/roll/trackball deferred.
+- **Rationale:** Orbit+zoom suffices to inspect a volume; the camera math is
+  unit-testable without a window; toggles exercise M4 live.
+- **Contract impact:** ADR-0018 (Proposed). Realizes D-0001 (thin viewer).
+- **Deferred alternatives:** trackball/arcball; configurable bindings; pan.
+
+### D-0027 — M5 swapchain & present: UNORM/FIFO, blit compute output, 1 frame in flight
+- **Date / milestone:** 2026-06-19 / M5 (CONTRACT)
+- **Choice:** How M4's compute-rendered image reaches the screen, and the present
+  loop's format/sync/resize policy.
+- **Decision:** UNORM surface format (prefer `B8G8R8A8_UNORM`) + `FIFO`; swapchain
+  images `eTransferDst`; per frame acquire → `Renderer::recordFrame` (dispatch to an
+  internal storage image) → **blit** into the swapchain image → present, with
+  `imageAvailable`/`renderFinished` semaphores + an in-flight fence (**one** frame
+  in flight); recreate on out-of-date/suboptimal/resize (device-idle first). The
+  offscreen `render()`+readback path is unchanged. Classic 1.0 barriers (D-0016).
+- **Rationale:** A compute pipeline can't draw to the swapchain (D-0021), so blit;
+  FIFO is universal; single-frame-in-flight is simple/correct and ample for ≥30 FPS.
+- **Contract impact:** ADR-0017 (Proposed).
+- **Deferred alternatives:** MAILBOX; frames-in-flight pipelining; dynamic
+  render-resolution (blit already enables it).
+
+### D-0026 — M5 windowing: GLFW via system find_package; presentation-capable Context
+- **Date / milestone:** 2026-06-19 / M5 (CONTRACT) — maintainer decision
+- **Choice:** How to acquire GLFW (the new windowing dependency, D-0002), and how
+  presentation support reaches our Vulkan setup.
+- **Decision:** GLFW via **system `find_package(glfw3)`** (maintainer installed
+  `libglfw3-dev`), used **only** by a separate `iv_viewer` target gated by
+  `IV_BUILD_VIEWER`; the core `iv` stays GLFW-free (D-0001). `iv::vk::Context` gains
+  an opt-in **presentation mode** (extends ADR-0005): enable GLFW-required instance
+  extensions + `VK_KHR_swapchain`; require the graphics queue family to also
+  present (verified vs the surface). Separate present queue deferred.
+- **Rationale:** Reuses Context (no duplication); keeps the headless core/tests
+  GLFW-free; system find_package matches ADR-0001 and is simplest.
+- **Contract impact:** ADR-0016 (Proposed); new dependency per ADR-0001 §1.1;
+  extends ADR-0005.
+- **Deferred alternatives:** vendoring GLFW (submodule); SDL3 / direct xcb-Wayland
+  (B-0001/B-0002); separate present queue.
+
 ### D-0025 — Volume stores (re, im); magnitude/phase derived in-shader (supersedes ADR-0009)
 - **Date / milestone:** 2026-06-19 / post-M4 (defect fix, CONTRACT)
 - **Choice / finding:** M4 rendering exposed a phase-seam artifact — the GPU
@@ -437,6 +521,23 @@ the same day. Future entries prepend above.)
 - **Revisit when:** M3 — allocations proliferate (3D textures, staging, buffers).
 - **Contract link:** a new dependency ADR (§1.1) + would amend ADR-0006's memory
   section.
+
+### B-0008 — Opacity correction for sample spacing (dt-independent α)
+- **Origin:** M5 benchmark teeth investigation (D-0030), 2026-06-19.
+- **What:** The per-sample opacity (ADR-0013) does not account for the ray step
+  spacing `dt`, so the accumulated opacity — and thus the displayed density and the
+  early-termination saturation point — depends on `stepCount`: more steps render a
+  *denser* image. For a quantitative tool the rendered density should be invariant
+  to the sampling rate.
+- **Proposed approach:** Standard DVR opacity correction
+  `α_dt = 1 − (1 − a)^(dt / refStep)`, so `stepCount` controls only sampling
+  fidelity, not displayed density (and makes the ADR-0019 "8× stepCount" teeth bite
+  directly, without `--no-early-term`).
+- **Why deferred:** M5 is the viewer + performance contract; this is a
+  rendering-model refinement, not a viewer concern.
+- **Revisit when:** the "usable scientific data plotting library" milestone
+  (quantitative correctness of opacity / transfer function).
+- **Contract link:** would extend ADR-0013 (opacity transfer function).
 
 ### B-0007 — Volume bounding box with axis ticks/labels
 - **Origin:** ADR-0012 review (maintainer, 2026-06-19).

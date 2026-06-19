@@ -20,3 +20,7 @@
 | [ADR-0013](0013-opacity-transfer-function.md) | Opacity Transfer Function (abs → α) | Accepted | — |
 | [ADR-0014](0014-cyclic-phase-colormap.md) | Cyclic Phase Colormap (arg → RGB) | Accepted | — |
 | [ADR-0015](0015-volume-stores-complex-value.md) | Volume Texture Stores the Complex Value (re, im); Magnitude/Phase Derived In-Shader | Accepted | supersedes ADR-0009 |
+| [ADR-0016](0016-windowing-glfw-and-presentation-context.md) | Windowing & Surface Dependency (GLFW); Presentation-Capable Context | Accepted | — |
+| [ADR-0017](0017-swapchain-and-present-loop.md) | Swapchain & Present Loop | Accepted | — |
+| [ADR-0018](0018-interaction-and-camera-control.md) | Interaction & Camera-Control API | Accepted | — |
+| [ADR-0019](0019-performance-contract-and-benchmark.md) | Performance Contract & Benchmark | Accepted | — |

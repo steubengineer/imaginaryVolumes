@@ -15,8 +15,17 @@
 #include <cstdint>
 #include <memory>
 #include <thread>
+#include <vector>
 
 namespace iv::vk {
+
+// Optional capabilities for a non-headless Context (ADR-0016). For presentation
+// the viewer passes the GLFW-required instance extensions plus the swapchain
+// device extension; an empty config yields the headless Context (ADR-0005).
+struct ContextConfig {
+    std::vector<const char*> instanceExtensions; // e.g. glfwGetRequiredInstanceExtensions()
+    std::vector<const char*> deviceExtensions;   // e.g. VK_KHR_swapchain
+};
 
 class Context {
 public:
@@ -24,6 +33,12 @@ public:
     // environment override. Returns device_unavailable if no suitable device
     // (or an out-of-range override) is found.
     [[nodiscard]] static Result<Context> create();
+
+    // As create(), additionally enabling the requested instance/device extensions
+    // (ADR-0016, presentation). The selected device must support all requested
+    // device extensions, else device_unavailable. The graphics queue's
+    // presentation support is verified by the caller against its surface.
+    [[nodiscard]] static Result<Context> create(const ContextConfig& config);
 
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;

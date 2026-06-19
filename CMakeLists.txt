@@ -120,3 +120,35 @@ option(IV_BUILD_EXAMPLES "Build example programs" ON)
 if(IV_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
+
+# --- Performance benchmark (ADR-0019): headless, no GLFW; opt-in to RUN (not on
+# the default ctest gate) but always built so the perf contract has a target. ---
+add_executable(iv_bench tools/bench.cpp)
+target_link_libraries(iv_bench PRIVATE iv iv_warnings)
+
+# --- Interactive viewer (ADR-0016): GLFW-coupled, isolated in `iv_viewer`. The
+# core `iv`, tests, and iv_bench never link GLFW; the viewer is gated by
+# IV_BUILD_VIEWER (default ON only when glfw3 is found). ---
+find_package(glfw3 QUIET)
+if(glfw3_FOUND)
+    message(STATUS "glfw3 found (${glfw3_VERSION}): viewer available")
+else()
+    message(STATUS "glfw3 not found: viewer will not be built")
+endif()
+option(IV_BUILD_VIEWER "Build the GLFW interactive viewer (requires glfw3)" ${glfw3_FOUND})
+if(IV_BUILD_VIEWER)
+    if(NOT glfw3_FOUND)
+        message(FATAL_ERROR
+            "IV_BUILD_VIEWER=ON but glfw3 was not found by find_package(glfw3). "
+            "Install libglfw3-dev or configure with -DIV_BUILD_VIEWER=OFF.")
+    endif()
+    # GLFW links PUBLIC (link-only: the public header forward-declares GLFWwindow
+    # and never includes <GLFW/glfw3.h>), so iv_view inherits the link.
+    add_library(iv_viewer STATIC src/vk/viewer.cpp)
+    add_library(iv::viewer ALIAS iv_viewer)
+    target_link_libraries(iv_viewer PUBLIC iv glfw)
+    target_link_libraries(iv_viewer PRIVATE iv_warnings)
+
+    add_executable(iv_view examples/view_demo.cpp)
+    target_link_libraries(iv_view PRIVATE iv_viewer iv_warnings)
+endif()

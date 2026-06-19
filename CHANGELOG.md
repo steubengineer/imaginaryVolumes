@@ -4,6 +4,74 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## M5 — Interactive Viewer & Performance Contract
+
+**Status:** Complete (2026-06-19).
+**Governing ADRs:** ADR-0016 (windowing/GLFW & presentation-capable Context),
+ADR-0017 (swapchain & present loop), ADR-0018 (interaction & camera control),
+ADR-0019 (performance contract & benchmark). Decisions: D-0026…D-0030; Backlog
+B-0008.
+
+### Added
+- **Presentation-capable `Context`** (ADR-0016): `iv::vk::ContextConfig`
+  {`instanceExtensions`, `deviceExtensions`} + `Context::create(const ContextConfig&)`;
+  device selection checks `supportsDeviceExtensions`. Headless `create()` delegates
+  to it and is unchanged (`include/iv/vk/context.hpp`, `src/vk/context.cpp`).
+- **`iv::OrbitCamera`** (ADR-0018): pure host (no Vulkan/GLFW)
+  target/distance/yaw/pitch with clamped pitch (`±(π/2−ε)`) and distance, `eye()`
+  per the ADR-0012 closed form (`include/iv/orbit_camera.hpp`).
+- **Renderer present path** (ADR-0017): `Renderer::recordFrame(cmd, volume, params,
+  dstImage, dstExtent)` — dispatches into a lazily (re)created internal storage
+  image and **blits** into `dstImage` (component-aware, so an RGBA8 render lands
+  correctly in a BGRA8 swapchain); no host readback. Extracted `fillUbo` /
+  `writeComputeDescriptors` / `ensureFrameResources`; the M4 `render()`+readback
+  path is unchanged (`include/iv/vk/renderer.hpp`, `src/vk/renderer.cpp`).
+- **`iv::vk::Viewer`** (ADR-0016/0017/0018), in the isolated **`iv_viewer`** target:
+  GLFW window (`GLFW_NO_API`) + surface; swapchain (UNORM, `FIFO`, `eTransferDst`);
+  present loop (acquire → record → →`ePresentSrcKHR` barrier → submit → present) with
+  one frame in flight, an in-flight fence, and a **per-image** `renderFinished`
+  semaphore; resize/recreate on out-of-date/suboptimal/resize (device-idle first;
+  minimized → idle). Input: left-drag orbit, scroll zoom, keys Esc/L/C/R;
+  `run()` / `runFrames(n)` / `requestResize(w,h)` (`include/iv/vk/viewer.hpp`,
+  `src/vk/viewer.cpp`).
+- **`iv_view`** demo (`examples/view_demo.cpp`) and headless **`iv_bench`** benchmark
+  (`tools/bench.cpp`, ADR-0019).
+- **CMake**: `find_package(glfw3)` + `option(IV_BUILD_VIEWER …)` (default ON when
+  glfw3 is found); `iv`/tests/`iv_bench` never link GLFW.
+
+### Verification
+- Full suite green (**235 assertions / 38 cases**); ASan+UBSan `ctest` green (both
+  entries); non-Vulkan suite leak-checked (117/19).
+- **Core is GLFW-free:** a `-DIV_BUILD_VIEWER=OFF` configuration builds `iv`, the
+  tests, and `iv_bench` with no `glfw3` and no viewer targets (ADR-0016).
+- **Viewer on the display** (`DISPLAY=:1`): `iv_view --frames 30` is
+  **validation-CLEAN** across acquire / dispatch / blit / present **and** a forced
+  swapchain recreation (resize 1280×720 → 960×540) (ADR-0017).
+- **Benchmark on the RTX 4070** (Release): median **15.3 ms (~65 FPS)** for one
+  512³ → 1280×720 `render()` — **PASS** (≤ 33.3 ms / ≥ 30 FPS, ADR-0019; D-0030).
+
+### Teeth evidence (ADR-0002 §2)
+Performed 2026-06-19; all faults reverted; final clean rebuild green.
+
+1. **Benchmark constrains the march budget (ADR-0019) — fault injection.**
+   `iv_bench --no-early-term --step-mult 8` (every ray marches 8× the samples) takes
+   the median **11.7 ms → 34.3 ms (29.2 FPS)** → the `median ≤ 33.3 ms` assertion
+   goes **RED** (nonzero exit); the contracted step → green. NB: plain `--step-mult
+   8` does *not* bite (median ≈ 13 ms) because early-ray termination caps cost
+   independent of `stepCount` — see **D-0030** / **B-0008**.
+2. **Present path (ADR-0017) — fault injection.** Removed the
+   `eTransferDstOptimal → ePresentSrcKHR` barrier before present; `iv_view --frames`
+   went **DIRTY** — validation: *"images passed to present must be in layout
+   PRESENT_SRC_KHR … but is in TRANSFER_DST_OPTIMAL"* (exit 2). Restored → CLEAN.
+   This is the teeth behind the `validationClean()` smoke check.
+3. **Camera clamp (ADR-0018) — fault injection.** Removed the pitch clamp in
+   `OrbitCamera::setPitch`; *"OrbitCamera clamps pitch and distance"* went **RED**
+   (`10.0f <= 1.5534f` failed, `test_orbit_camera.cpp:61`). Restored → green. The
+   `eye()`-closed-form and orbit-preserves-distance cases guard the rest of the math.
+4. **Core GLFW isolation (ADR-0016).** The `IV_BUILD_VIEWER=OFF` build proves
+   `iv`/tests/`iv_bench` compile and link with GLFW entirely absent; linking GLFW
+   into `iv` (the counterfactual teeth) would break that configuration.
+
 ## Fix — Phase seam: store complex (Re, Im), derive magnitude/phase in-shader (ADR-0015)
 
 **Status:** Complete (2026-06-19). **Governing ADRs:** ADR-0015 (supersedes

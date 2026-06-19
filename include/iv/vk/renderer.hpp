@@ -56,6 +56,16 @@ public:
     [[nodiscard]] Result<ImageReadback> render(const Volume& volume, std::uint32_t width,
                                                std::uint32_t height, const RenderParams& params);
 
+    // Present path (ADR-0017): record a render of `volume` with `params` into the
+    // caller-provided command buffer, dispatching into an internal storage image
+    // (sized to `dstExtent`, lazily (re)created) and blitting it into `dstImage`.
+    // No host readback. `dstImage` must have eTransferDst usage; its prior contents
+    // are discarded and it is left in eTransferDstOptimal (the caller transitions
+    // it to ePresentSrcKHR). The command buffer must be in the recording state.
+    [[nodiscard]] Status recordFrame(::vk::CommandBuffer cmd, const Volume& volume,
+                                     const RenderParams& params, ::vk::Image dstImage,
+                                     ::vk::Extent2D dstExtent);
+
     // True if the volume sampler uses linear filtering (false => nearest fallback
     // when R32G32_SFLOAT lacks linear-filter support; ADR-0009 note).
     [[nodiscard]] bool volumeLinearFilter() const noexcept { return volumeLinearFilter_; }
@@ -63,6 +73,13 @@ public:
 private:
     Renderer() = default;
     void checkAffinity() const noexcept;
+
+    // Write the 4 compute descriptors (volume sampler, storage image, UBO, LUT).
+    void writeComputeDescriptors(::vk::DescriptorSet set, ::vk::ImageView volumeView,
+                                 ::vk::ImageView storageView, ::vk::Buffer ubo);
+    // Lazily (re)create the present-path storage image / UBO / descriptor set when
+    // the extent or volume changes (ADR-0017).
+    [[nodiscard]] Status ensureFrameResources(const Volume& volume, ::vk::Extent2D extent);
 
     // Borrowed from the Context, which must outlive this Renderer.
     ::vk::Device device_{};
@@ -83,6 +100,21 @@ private:
     Unique<::vk::DeviceMemory> lutMemory_;
     Unique<::vk::Image> lutImage_;
     Unique<::vk::ImageView> lutView_;
+
+    // Present-path (recordFrame) resources, lazily (re)created on extent/volume
+    // change. Declared after the pipeline objects; the view/image precede their
+    // backing memory only within each (image, memory) pair via reset order below —
+    // so memory_ members are declared before their image/view here.
+    ::vk::Extent2D frameExtent_{0, 0};
+    ::vk::ImageView frameVolumeView_{};
+    void* frameUboMapped_{nullptr};
+    Unique<::vk::DeviceMemory> frameImageMem_;
+    Unique<::vk::Image> frameImage_;
+    Unique<::vk::ImageView> frameView_;
+    Unique<::vk::DeviceMemory> frameUboMem_;
+    Unique<::vk::Buffer> frameUbo_;
+    Unique<::vk::DescriptorPool> frameDescriptorPool_;
+    ::vk::DescriptorSet frameSet_{};
 };
 
 } // namespace iv::vk

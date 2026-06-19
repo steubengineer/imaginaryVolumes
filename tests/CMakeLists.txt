@@ -4,6 +4,7 @@ add_executable(iv_tests
     test_error.cpp
     test_assert.cpp
     test_volume.cpp
+    test_orbit_camera.cpp
     test_vk_context.cpp
     test_vk_offscreen.cpp
     test_vk_volume.cpp

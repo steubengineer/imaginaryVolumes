@@ -87,13 +87,16 @@ message(STATUS "Shader compiler (glslc): ${IV_GLSLC}")
 set(IV_EMBED_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_spirv.cmake)
 
 # Compile a GLSL shader to SPIR-V and embed it as a generated .cpp linked into iv.
+# Extra glslc flags may be passed after SYMBOL (ARGN), e.g. an -I include dir and
+# -fauto-bind-uniforms for the vendored Slug shaders (ADR-0023). Files that the
+# shader #includes can be added to the rebuild deps via IV_EMBED_EXTRA_DEPS.
 function(iv_embed_shader SRC SYMBOL)
     set(spv ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOL}.spv)
     set(gen ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOL}.spv.cpp)
     add_custom_command(
         OUTPUT ${spv}
-        COMMAND ${IV_GLSLC} -O --target-env=vulkan1.3 -o ${spv} ${SRC}
-        DEPENDS ${SRC}
+        COMMAND ${IV_GLSLC} -O --target-env=vulkan1.3 ${ARGN} -o ${spv} ${SRC}
+        DEPENDS ${SRC} ${IV_EMBED_EXTRA_DEPS}
         COMMENT "glslc ${SYMBOL}"
         VERBATIM)
     add_custom_command(
@@ -109,6 +112,18 @@ endfunction()
 iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/ray_march.comp ray_march_comp)
 iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/overlay.vert overlay_vert)
 iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/overlay.frag overlay_frag)
+
+# GPU glyph shaders (ADR-0023): the fragment stage #includes libharfbuzz-gpu's
+# vendored Slug GLSL, so it compiles with -I <harfbuzz/src> and glslc auto-binding
+# (which assigns the atlas sampler to set 0 / binding 0). The glyph pipeline lives
+# in the core renderer; it only needs the GLSL source + glslc (no HarfBuzz link),
+# so it builds even with IV_BUILD_TEXT=OFF (only iv_text links HarfBuzz).
+set(IV_HB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/harfbuzz/src)
+set(IV_EMBED_EXTRA_DEPS ${IV_HB_SRC}/hb-gpu-fragment.glsl ${IV_HB_SRC}/hb-gpu-draw-fragment.glsl)
+iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/glyph.vert glyph_vert)
+iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/glyph.frag glyph_frag
+    -I ${IV_HB_SRC} -fauto-bind-uniforms -fauto-map-locations)
+set(IV_EMBED_EXTRA_DEPS "")
 
 # --- Text shaping (ADR-0022): vendored HarfBuzz + iv::text::Shaper, gated. ---
 # Text lives in the annotation layer, not core `iv`: with IV_BUILD_TEXT=OFF the
@@ -131,12 +146,15 @@ if(IV_BUILD_TEXT)
         COMMENT "embed NewCM10-Book.otf"
         VERBATIM)
 
-    add_library(iv_text STATIC src/text/shaper.cpp src/text/bundled_font.cpp ${IV_FONT_GEN})
+    add_library(iv_text STATIC
+        src/text/shaper.cpp src/text/bundled_font.cpp src/text/text_layout.cpp ${IV_FONT_GEN})
     add_library(iv::text ALIAS iv_text)
     # iv is PUBLIC: shaper.hpp includes iv/error.hpp. harfbuzz_core is PRIVATE:
     # HarfBuzz is hidden behind the Shaper (ADR-0004), only shaper.cpp needs it.
     target_link_libraries(iv_text PUBLIC iv)
-    target_link_libraries(iv_text PRIVATE harfbuzz_core iv_warnings)
+    # harfbuzz_gpu (ADR-0023) links harfbuzz_core transitively; both PRIVATE since
+    # HarfBuzz stays behind the Shaper boundary (ADR-0004).
+    target_link_libraries(iv_text PRIVATE harfbuzz_gpu iv_warnings)
 endif()
 
 # --- Tests ---

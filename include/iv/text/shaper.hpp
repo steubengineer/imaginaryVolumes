@@ -38,6 +38,24 @@ struct ShapedGlyph {
     float yOffset{};
 };
 
+// Em-space ink bounding box of a glyph (in font units, y-up: minY is the bottom).
+struct GlyphExtents {
+    float minX{};
+    float minY{};
+    float maxX{};
+    float maxY{};
+    [[nodiscard]] bool empty() const noexcept { return maxX <= minX || maxY <= minY; }
+};
+
+// A glyph encoded into the Shaper's GPU glyph atlas (ADR-0023, Slug /
+// libharfbuzz-gpu): its texel offset into glyphAtlas() and its em-space extents.
+// `blank` glyphs (whitespace, .notdef with no outline) need no quad.
+struct EncodedGlyph {
+    std::uint32_t atlasOffset{};
+    GlyphExtents extents{};
+    bool blank{true};
+};
+
 // Shapes UTF-8 text for one font at one pixel size. Move-only; owns the parsed
 // font. The glyph ids it emits index THIS font (consumed by the glyph renderer,
 // ADR-0023).
@@ -68,6 +86,23 @@ public:
     // The configured pixel size (em square, pixels) and the font's units-per-em.
     [[nodiscard]] float pixelSize() const noexcept;
     [[nodiscard]] std::uint32_t unitsPerEm() const noexcept;
+
+    // ADR-0023 (GPU glyph rendering). The Shaper owns the font, so it also serves
+    // glyph outlines for the Slug GPU renderer (libharfbuzz-gpu), behind the same
+    // HarfBuzz boundary (ADR-0004).
+    //
+    // Encode `glyphId`'s outline into this Shaper's atlas (in FONT units, not
+    // pixels — Slug quantizes coordinates, so font-unit coordinates keep
+    // precision). Cached per glyphId; the returned reference is stable until the
+    // Shaper is destroyed. Encoding never fails recoverably (a missing outline is
+    // a `blank` glyph); allocation failure propagates as std::bad_alloc.
+    [[nodiscard]] const EncodedGlyph& encodeGlyph(std::uint32_t glyphId);
+
+    // The packed Slug atlas: a stream of int16, four per texel (an ivec4). Upload
+    // as an R16G16B16A16_SINT uniform texel buffer; the Slug shader fetches texel i
+    // (the unit of EncodedGlyph::atlasOffset) as ints [4i .. 4i+3]. Grows as glyphs
+    // are encoded; the span is invalidated by the next encodeGlyph().
+    [[nodiscard]] std::span<const std::int16_t> glyphAtlas() const noexcept;
 
 private:
     Shaper() = default;

@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -50,13 +51,36 @@ struct OverlayVertex {
     std::array<float, 3> pos;   // clip-space (identity transform) or world-space
     std::array<float, 4> color; // RGBA, straight (non-premultiplied) alpha
 };
+
+// One vertex of a Slug glyph quad (ADR-0023). Positions are pre-projected to
+// clip space (NDC) on the CPU; `texcoord` is the em-space (font-unit) sample
+// coordinate; `glyphLoc` is the glyph's texel offset into the atlas (see
+// iv::text). Six vertices (two triangles) per glyph. Produced by the text layer
+// (iv::text::appendText); the renderer treats it as opaque geometry + an int atlas
+// and never links HarfBuzz.
+struct GlyphVertex {
+    std::array<float, 2> pos;      // clip-space (NDC) quad corner
+    std::array<float, 2> texcoord; // em-space sample coordinate (font units)
+    std::uint32_t glyphLoc;        // atlas texel offset for this glyph
+    std::array<float, 4> color;    // RGBA, straight (non-premultiplied) alpha
+};
+
 struct Overlay {
     std::vector<OverlayVertex> lines;     // line list (consecutive vertex pairs)
     std::vector<OverlayVertex> triangles; // triangle list (consecutive vertex triples)
+    // Glyph quads + their Slug atlas (ADR-0023). `glyphs` is a triangle list (6
+    // verts/glyph); `glyphAtlas` is the packed RGBA16I texel stream uploaded as an
+    // R16G16B16A16_SINT uniform texel buffer that the Slug fragment shader samples.
+    // (Currently drawn on the headless render() path; the present path is M7.)
+    std::vector<GlyphVertex> glyphs;
+    std::vector<std::int16_t> glyphAtlas;
     // Column-major 4x4 (GLSL convention); identity => positions are clip-space.
+    // Applies to lines/triangles; glyph positions are already clip-space.
     std::array<float, 16> transform{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                     0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
-    [[nodiscard]] bool empty() const noexcept { return lines.empty() && triangles.empty(); }
+    [[nodiscard]] bool empty() const noexcept {
+        return lines.empty() && triangles.empty() && glyphs.empty();
+    }
 };
 
 class Renderer {
@@ -103,14 +127,35 @@ private:
     // the extent or volume changes (ADR-0017).
     [[nodiscard]] Status ensureFrameResources(const Volume& volume, ::vk::Extent2D extent);
 
+    // Transient per-render Slug glyph resources (ADR-0023): the glyph vertex
+    // buffer, the atlas uniform texel buffer + its R16G16B16A16_SINT view, and a
+    // descriptor set bound to the view. Built by buildGlyphResources(); must live
+    // until the render's GPU work completes.
+    struct GlyphResources {
+        Unique<::vk::Buffer> vbuf;
+        Unique<::vk::DeviceMemory> vmem;
+        Unique<::vk::Buffer> atlasBuf;
+        Unique<::vk::DeviceMemory> atlasMem;
+        Unique<::vk::BufferView> atlasView;
+        Unique<::vk::DescriptorPool> pool;
+        ::vk::DescriptorSet set{};
+        std::uint32_t vertexCount{0};
+    };
+    // Build the glyph resources for one render from `glyphs` + the packed `atlas`.
+    // Returns a bundle with vertexCount == 0 when `glyphs` is empty.
+    [[nodiscard]] Result<GlyphResources> buildGlyphResources(
+        const std::vector<GlyphVertex>& glyphs, std::span<const std::int16_t> atlas);
+
     // Record the overlay graphics pass (ADR-0021): begin the render pass on
     // `framebuffer`, draw `lineVertexCount` line vertices then `triangleVertexCount`
     // triangle vertices from `vbuf` (lines at offset 0, triangles immediately after),
-    // end. The caller transitions the target to eColorAttachmentOptimal and uploads
-    // the vertices beforehand.
+    // then — if `glyphs` is non-null with vertexCount > 0 — the Slug glyph quads
+    // (ADR-0023), end. The caller transitions the target to eColorAttachmentOptimal
+    // and uploads the vertices beforehand.
     void drawOverlay(::vk::CommandBuffer cmd, ::vk::Framebuffer framebuffer, ::vk::Extent2D extent,
                      ::vk::Buffer vbuf, std::uint32_t lineVertexCount,
-                     std::uint32_t triangleVertexCount, const std::array<float, 16>& transform);
+                     std::uint32_t triangleVertexCount, const std::array<float, 16>& transform,
+                     const GlyphResources* glyphs);
 
     // Borrowed from the Context, which must outlive this Renderer.
     ::vk::Device device_{};
@@ -139,6 +184,13 @@ private:
     Unique<::vk::PipelineLayout> overlayPipelineLayout_;
     Unique<::vk::Pipeline> overlayLinePipeline_;
     Unique<::vk::Pipeline> overlayTrianglePipeline_;
+
+    // Slug glyph pipeline (ADR-0023): shares renderPass_; its own descriptor set
+    // layout (set 0, binding 0 = the atlas uniform texel buffer) + pipeline layout.
+    // Created once. Declared after the layout it depends on (destroyed first).
+    Unique<::vk::DescriptorSetLayout> glyphSetLayout_;
+    Unique<::vk::PipelineLayout> glyphPipelineLayout_;
+    Unique<::vk::Pipeline> glyphPipeline_;
 
     // Present-path (recordFrame) resources, lazily (re)created on extent/volume
     // change. Declared after the pipeline objects; the view/image precede their

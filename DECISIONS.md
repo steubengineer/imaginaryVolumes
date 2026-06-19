@@ -10,6 +10,38 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0036 — M6 Slug glyph rendering: integration specifics + headless-only scope
+- **Date / milestone:** 2026-06-19 / M6 (IMPLEMENT, ADR-0023)
+- **Choice:** How libharfbuzz-gpu's experimental Slug encoder/shaders bind to our
+  Vulkan overlay, and how much of the path M6 ships.
+- **Decision / findings:**
+  - **Atlas format:** the Slug encoder emits **RGBA16I** texels (4×int16, 8 bytes;
+    the source of the ±8000-unit coordinate range). The atlas is stored int16 and
+    uploaded as an **R16G16B16A16_SINT uniform texel buffer**; the shader's
+    `isamplerBuffer hb_gpu_atlas` auto-binds to **set 0 / binding 0**.
+  - **Vendored GLSL → Vulkan:** the HB GLSL is OpenGL-3.3 style (its only uniform is
+    the opaque atlas sampler). It compiles to Vulkan SPIR-V via our `glslc` with
+    **`-fauto-bind-uniforms -fauto-map-locations`** and `-I third_party/harfbuzz/src`
+    (`#include`d into our `shaders/glyph.frag`). Glyph outlines are encoded in **font
+    units** (a separate upem-scaled `hb_font`) to satisfy the quantization.
+  - **No dilation:** glyph quad corners are pre-projected to clip space (NDC) on the
+    CPU and padded ~5% em, so we skip the HB half-pixel `hb_gpu_dilate` vertex helper;
+    the vertex stage is a pass-through and the analytic Slug coverage gives the AA.
+  - **Scope (deviation):** glyphs render on the **headless `render()` path** — the
+    ADR-0023 verification path (coverage readback + zoom). The **present/viewer path
+    draws lines/triangles only**; per-frame Slug glyph plumbing is **deferred to M7**
+    (the annotation layer that decides the viewer's text). This narrows ADR-0021's
+    "identical headless and windowed" for the glyph subset only — lines/triangles
+    stay identical in both paths. **B-0010** tracks the present-path work.
+  - **Glyph pipeline lives in core `iv`** (a graphics pipeline over an int texel
+    buffer — no HarfBuzz link); only the *data* (atlas + quads) comes from `iv_text`
+    (`appendText`). So the glyph shaders compile even with `IV_BUILD_TEXT=OFF`.
+- **Rationale:** Confirmed the experimental Slug path works in Vulkan (no MSDF
+  fallback needed, ADR-0023); headless rendering proves the technique and fully
+  satisfies the ADR while keeping the renderer changes bounded.
+- **Contract impact:** Implements ADR-0023; the headless-only scope is the recorded
+  deviation (DEV_PROCESS §; cf. D-0030). MSDF fallback remains documented, unused.
+
 ### D-0035 — M6 HarfBuzz acquisition: concrete pin, vendored shape, bundled face
 - **Date / milestone:** 2026-06-19 / M6 (IMPLEMENT, ADR-0022)
 - **Choice:** The concrete facts ADR-0022 deferred "to acceptance": which commit,
@@ -620,6 +652,23 @@ the same day. Future entries prepend above.)
 - **Revisit when:** M3 — allocations proliferate (3D textures, staging, buffers).
 - **Contract link:** a new dependency ADR (§1.1) + would amend ADR-0006's memory
   section.
+
+### B-0010 — Present-path (viewer) Slug glyph rendering
+- **Origin:** M6 ADR-0023 implementation (D-0036), 2026-06-19.
+- **What:** Draw Slug glyph quads on the **present path** (`recordFrame`), not just
+  headless `render()`, so the interactive viewer shows text. Needs the glyph vertex
+  buffer + atlas texel buffer/view + descriptor set managed across the in-flight
+  frame (like `frameOverlayBuf_`), rather than the transient per-render
+  `buildGlyphResources`. Also: cache the atlas/encoding instead of rebuilding it
+  per frame.
+- **Why deferred:** ADR-0023's verification is headless coverage readback; the
+  viewer's *live* labels are an M7 concern (the annotation layer decides what text to
+  draw, where, and when it changes). Shipping headless-only kept the M6 renderer
+  changes bounded.
+- **Revisit when:** M7 — bounding box / ticked axes / legend need on-screen labels in
+  the viewer.
+- **Contract link:** extends ADR-0023 (rendering path) under ADR-0021's overlay; no
+  new public contract.
 
 ### B-0009 — Declare a top-level project LICENSE
 - **Origin:** M6 font vetting (ADR-0022), 2026-06-19 — the repo has no

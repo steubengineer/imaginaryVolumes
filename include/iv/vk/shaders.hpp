@@ -24,6 +24,13 @@ extern const ::std::size_t overlay_vert_size;
 extern const unsigned char overlay_frag_data[];
 extern const ::std::size_t overlay_frag_size;
 
+// shaders/glyph.vert, shaders/glyph.frag (ADR-0023 Slug GPU glyph rendering; the
+// fragment embeds libharfbuzz-gpu's vendored Slug GLSL)
+extern const unsigned char glyph_vert_data[];
+extern const ::std::size_t glyph_vert_size;
+extern const unsigned char glyph_frag_data[];
+extern const ::std::size_t glyph_frag_size;
+
 } // namespace iv::vk::shaders
 
 namespace iv::vk {

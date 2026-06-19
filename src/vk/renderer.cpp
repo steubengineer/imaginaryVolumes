@@ -518,6 +518,119 @@ Result<Renderer> Renderer::create(const Context& ctx) {
         }
     }
 
+    // --- Slug glyph pipeline (ADR-0023): shares the overlay render pass ---
+    {
+        const auto binding = vkh::DescriptorSetLayoutBinding{}
+                                 .setBinding(0u)
+                                 .setDescriptorType(vkh::DescriptorType::eUniformTexelBuffer)
+                                 .setDescriptorCount(1u)
+                                 .setStageFlags(vkh::ShaderStageFlagBits::eFragment);
+        auto sl = take(device.createDescriptorSetLayout(
+                           vkh::DescriptorSetLayoutCreateInfo{}.setBindings(binding)),
+                       "createDescriptorSetLayout(glyph)");
+        if (!sl) {
+            return std::unexpected(std::move(sl).error());
+        }
+        r.glyphSetLayout_ = Unique<vkh::DescriptorSetLayout>(
+            *sl, [device](vkh::DescriptorSetLayout h) { device.destroyDescriptorSetLayout(h); });
+
+        const vkh::DescriptorSetLayout setLayouts = r.glyphSetLayout_.get();
+        auto pl = take(device.createPipelineLayout(
+                           vkh::PipelineLayoutCreateInfo{}.setSetLayouts(setLayouts)),
+                       "createPipelineLayout(glyph)");
+        if (!pl) {
+            return std::unexpected(std::move(pl).error());
+        }
+        r.glyphPipelineLayout_ = Unique<vkh::PipelineLayout>(
+            *pl, [device](vkh::PipelineLayout h) { device.destroyPipelineLayout(h); });
+
+        auto vert = makeShaderModule(device, shaders::glyph_vert_data, shaders::glyph_vert_size);
+        if (!vert) {
+            return std::unexpected(std::move(vert).error());
+        }
+        auto frag = makeShaderModule(device, shaders::glyph_frag_data, shaders::glyph_frag_size);
+        if (!frag) {
+            return std::unexpected(std::move(frag).error());
+        }
+        const std::array<vkh::PipelineShaderStageCreateInfo, 2> stages{{
+            vkh::PipelineShaderStageCreateInfo{}
+                .setStage(vkh::ShaderStageFlagBits::eVertex)
+                .setModule(vert->get())
+                .setPName("main"),
+            vkh::PipelineShaderStageCreateInfo{}
+                .setStage(vkh::ShaderStageFlagBits::eFragment)
+                .setModule(frag->get())
+                .setPName("main"),
+        }};
+        const auto vbind = vkh::VertexInputBindingDescription{}
+                               .setBinding(0u)
+                               .setStride(static_cast<std::uint32_t>(sizeof(GlyphVertex)))
+                               .setInputRate(vkh::VertexInputRate::eVertex);
+        const std::array<vkh::VertexInputAttributeDescription, 4> attrs{{
+            vkh::VertexInputAttributeDescription{}.setLocation(0u).setBinding(0u).setFormat(
+                vkh::Format::eR32G32Sfloat).setOffset(
+                static_cast<std::uint32_t>(offsetof(GlyphVertex, pos))),
+            vkh::VertexInputAttributeDescription{}.setLocation(1u).setBinding(0u).setFormat(
+                vkh::Format::eR32G32Sfloat).setOffset(
+                static_cast<std::uint32_t>(offsetof(GlyphVertex, texcoord))),
+            vkh::VertexInputAttributeDescription{}.setLocation(2u).setBinding(0u).setFormat(
+                vkh::Format::eR32Uint).setOffset(
+                static_cast<std::uint32_t>(offsetof(GlyphVertex, glyphLoc))),
+            vkh::VertexInputAttributeDescription{}.setLocation(3u).setBinding(0u).setFormat(
+                vkh::Format::eR32G32B32A32Sfloat).setOffset(
+                static_cast<std::uint32_t>(offsetof(GlyphVertex, color))),
+        }};
+        const auto vinput = vkh::PipelineVertexInputStateCreateInfo{}
+                                .setVertexBindingDescriptions(vbind)
+                                .setVertexAttributeDescriptions(attrs);
+        const auto ia = vkh::PipelineInputAssemblyStateCreateInfo{}.setTopology(
+            vkh::PrimitiveTopology::eTriangleList);
+        const auto vp =
+            vkh::PipelineViewportStateCreateInfo{}.setViewportCount(1u).setScissorCount(1u);
+        const auto rs = vkh::PipelineRasterizationStateCreateInfo{}
+                            .setPolygonMode(vkh::PolygonMode::eFill)
+                            .setCullMode(vkh::CullModeFlagBits::eNone)
+                            .setFrontFace(vkh::FrontFace::eCounterClockwise)
+                            .setLineWidth(1.0f);
+        const auto ms = vkh::PipelineMultisampleStateCreateInfo{}.setRasterizationSamples(
+            vkh::SampleCountFlagBits::e1);
+        const auto blendAttach = vkh::PipelineColorBlendAttachmentState{}
+                                     .setBlendEnable(VK_TRUE)
+                                     .setSrcColorBlendFactor(vkh::BlendFactor::eSrcAlpha)
+                                     .setDstColorBlendFactor(vkh::BlendFactor::eOneMinusSrcAlpha)
+                                     .setColorBlendOp(vkh::BlendOp::eAdd)
+                                     .setSrcAlphaBlendFactor(vkh::BlendFactor::eOne)
+                                     .setDstAlphaBlendFactor(vkh::BlendFactor::eOneMinusSrcAlpha)
+                                     .setAlphaBlendOp(vkh::BlendOp::eAdd)
+                                     .setColorWriteMask(vkh::ColorComponentFlagBits::eR
+                                                        | vkh::ColorComponentFlagBits::eG
+                                                        | vkh::ColorComponentFlagBits::eB
+                                                        | vkh::ColorComponentFlagBits::eA);
+        const auto cb = vkh::PipelineColorBlendStateCreateInfo{}.setAttachments(blendAttach);
+        const std::array<vkh::DynamicState, 2> dynStates{vkh::DynamicState::eViewport,
+                                                         vkh::DynamicState::eScissor};
+        const auto dyn = vkh::PipelineDynamicStateCreateInfo{}.setDynamicStates(dynStates);
+        auto pipe = take(device.createGraphicsPipeline(
+                             {}, vkh::GraphicsPipelineCreateInfo{}
+                                     .setStages(stages)
+                                     .setPVertexInputState(&vinput)
+                                     .setPInputAssemblyState(&ia)
+                                     .setPViewportState(&vp)
+                                     .setPRasterizationState(&rs)
+                                     .setPMultisampleState(&ms)
+                                     .setPColorBlendState(&cb)
+                                     .setPDynamicState(&dyn)
+                                     .setLayout(r.glyphPipelineLayout_.get())
+                                     .setRenderPass(r.renderPass_.get())
+                                     .setSubpass(0u)),
+                         "createGraphicsPipeline(glyph)");
+        if (!pipe) {
+            return std::unexpected(std::move(pipe).error());
+        }
+        r.glyphPipeline_ =
+            Unique<vkh::Pipeline>(*pipe, [device](vkh::Pipeline h) { device.destroyPipeline(h); });
+    }
+
     return r;
 }
 
@@ -656,17 +769,28 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
     Unique<vkh::Buffer> overlayBuf;
     Unique<vkh::DeviceMemory> overlayMem;
     Unique<vkh::Framebuffer> overlayFb;
+    GlyphResources glyphRes;
     std::uint32_t overlayLineVerts = 0u;
     std::uint32_t overlayTriVerts = 0u;
     if (hasOverlay) {
-        auto ob = makeOverlayBuffer(device, physicalDevice_, *overlay);
-        if (!ob) {
-            return std::unexpected(std::move(ob).error());
+        // Line/triangle vertex buffer — only when there is line/triangle geometry
+        // (a glyphs-only overlay must not create a zero-size buffer).
+        if (!overlay->lines.empty() || !overlay->triangles.empty()) {
+            auto ob = makeOverlayBuffer(device, physicalDevice_, *overlay);
+            if (!ob) {
+                return std::unexpected(std::move(ob).error());
+            }
+            overlayBuf = std::move(ob->buffer);
+            overlayMem = std::move(ob->memory);
+            overlayLineVerts = static_cast<std::uint32_t>(overlay->lines.size());
+            overlayTriVerts = static_cast<std::uint32_t>(overlay->triangles.size());
         }
-        overlayBuf = std::move(ob->buffer);
-        overlayMem = std::move(ob->memory);
-        overlayLineVerts = static_cast<std::uint32_t>(overlay->lines.size());
-        overlayTriVerts = static_cast<std::uint32_t>(overlay->triangles.size());
+        auto gr = buildGlyphResources(overlay->glyphs,
+                                      std::span<const std::int16_t>(overlay->glyphAtlas));
+        if (!gr) {
+            return std::unexpected(std::move(gr).error());
+        }
+        glyphRes = *std::move(gr);
         const vkh::ImageView attach = view.get();
         auto fb = take(device.createFramebuffer(vkh::FramebufferCreateInfo{}
                                                     .setRenderPass(renderPass_.get())
@@ -722,7 +846,7 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
                                          | vkh::AccessFlagBits::eColorAttachmentRead));
                     drawOverlay(cmd, overlayFb.get(), vkh::Extent2D{width, height},
                                 overlayBuf.get(), overlayLineVerts, overlayTriVerts,
-                                overlay->transform);
+                                overlay->transform, &glyphRes);
                     cmd.pipelineBarrier(
                         vkh::PipelineStageFlagBits::eColorAttachmentOutput,
                         vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr,
@@ -798,10 +922,134 @@ void Renderer::writeComputeDescriptors(vkh::DescriptorSet set, vkh::ImageView vo
     device_.updateDescriptorSets(writes, nullptr);
 }
 
+Result<Renderer::GlyphResources> Renderer::buildGlyphResources(
+    const std::vector<GlyphVertex>& glyphs, std::span<const std::int16_t> atlas) {
+    const vkh::Device device = device_;
+    GlyphResources g;
+    if (glyphs.empty()) {
+        return g; // vertexCount stays 0: nothing to draw
+    }
+
+    // 1. Vertex buffer (host-visible): the glyph quads.
+    const vkh::DeviceSize vbytes = static_cast<vkh::DeviceSize>(glyphs.size()) * sizeof(GlyphVertex);
+    {
+        auto m = take(device.createBuffer(vkh::BufferCreateInfo{}
+                                              .setSize(vbytes)
+                                              .setUsage(vkh::BufferUsageFlagBits::eVertexBuffer)
+                                              .setSharingMode(vkh::SharingMode::eExclusive)),
+                      "createBuffer(glyph vbuf)");
+        if (!m) {
+            return std::unexpected(std::move(m).error());
+        }
+        g.vbuf = Unique<vkh::Buffer>(*m, [device](vkh::Buffer h) { device.destroyBuffer(h); });
+    }
+    {
+        auto mem = allocateAndBindBuffer(device, physicalDevice_, g.vbuf.get(),
+                                         vkh::MemoryPropertyFlagBits::eHostVisible
+                                             | vkh::MemoryPropertyFlagBits::eHostCoherent,
+                                         "glyph vertices");
+        if (!mem) {
+            return std::unexpected(std::move(mem).error());
+        }
+        g.vmem = *std::move(mem);
+    }
+    {
+        auto mapped = take(device.mapMemory(g.vmem.get(), 0, vbytes), "mapMemory(glyph vbuf)");
+        if (!mapped) {
+            return std::unexpected(std::move(mapped).error());
+        }
+        std::memcpy(*mapped, glyphs.data(), static_cast<std::size_t>(vbytes));
+        device.unmapMemory(g.vmem.get());
+    }
+
+    // 2. Atlas uniform texel buffer (host-visible): the RGBA16I Slug stream.
+    const vkh::DeviceSize abytes = static_cast<vkh::DeviceSize>(atlas.size()) * sizeof(std::int16_t);
+    {
+        auto m = take(device.createBuffer(vkh::BufferCreateInfo{}
+                                              .setSize(abytes)
+                                              .setUsage(vkh::BufferUsageFlagBits::eUniformTexelBuffer)
+                                              .setSharingMode(vkh::SharingMode::eExclusive)),
+                      "createBuffer(glyph atlas)");
+        if (!m) {
+            return std::unexpected(std::move(m).error());
+        }
+        g.atlasBuf = Unique<vkh::Buffer>(*m, [device](vkh::Buffer h) { device.destroyBuffer(h); });
+    }
+    {
+        auto mem = allocateAndBindBuffer(device, physicalDevice_, g.atlasBuf.get(),
+                                         vkh::MemoryPropertyFlagBits::eHostVisible
+                                             | vkh::MemoryPropertyFlagBits::eHostCoherent,
+                                         "glyph atlas");
+        if (!mem) {
+            return std::unexpected(std::move(mem).error());
+        }
+        g.atlasMem = *std::move(mem);
+    }
+    {
+        auto mapped = take(device.mapMemory(g.atlasMem.get(), 0, abytes), "mapMemory(glyph atlas)");
+        if (!mapped) {
+            return std::unexpected(std::move(mapped).error());
+        }
+        std::memcpy(*mapped, atlas.data(), static_cast<std::size_t>(abytes));
+        device.unmapMemory(g.atlasMem.get());
+    }
+    {
+        auto v = take(device.createBufferView(vkh::BufferViewCreateInfo{}
+                                                  .setBuffer(g.atlasBuf.get())
+                                                  .setFormat(vkh::Format::eR16G16B16A16Sint)
+                                                  .setOffset(0)
+                                                  .setRange(VK_WHOLE_SIZE)),
+                      "createBufferView(glyph atlas)");
+        if (!v) {
+            return std::unexpected(std::move(v).error());
+        }
+        g.atlasView = Unique<vkh::BufferView>(
+            *v, [device](vkh::BufferView h) { device.destroyBufferView(h); });
+    }
+
+    // 3. Descriptor pool + a set bound to the atlas view (set 0, binding 0).
+    {
+        const auto poolSize = vkh::DescriptorPoolSize{}
+                                  .setType(vkh::DescriptorType::eUniformTexelBuffer)
+                                  .setDescriptorCount(1u);
+        auto p = take(device.createDescriptorPool(
+                          vkh::DescriptorPoolCreateInfo{}.setMaxSets(1u).setPoolSizes(poolSize)),
+                      "createDescriptorPool(glyph)");
+        if (!p) {
+            return std::unexpected(std::move(p).error());
+        }
+        g.pool = Unique<vkh::DescriptorPool>(
+            *p, [device](vkh::DescriptorPool h) { device.destroyDescriptorPool(h); });
+    }
+    {
+        const vkh::DescriptorSetLayout sl = glyphSetLayout_.get();
+        auto s = take(device.allocateDescriptorSets(
+                          vkh::DescriptorSetAllocateInfo{}.setDescriptorPool(g.pool.get()).setSetLayouts(
+                              sl)),
+                      "allocateDescriptorSets(glyph)");
+        if (!s) {
+            return std::unexpected(std::move(s).error());
+        }
+        g.set = (*s).front();
+    }
+    {
+        const vkh::BufferView view = g.atlasView.get();
+        const auto write = vkh::WriteDescriptorSet{}
+                               .setDstSet(g.set)
+                               .setDstBinding(0u)
+                               .setDescriptorType(vkh::DescriptorType::eUniformTexelBuffer)
+                               .setTexelBufferView(view);
+        device.updateDescriptorSets(write, nullptr);
+    }
+
+    g.vertexCount = static_cast<std::uint32_t>(glyphs.size());
+    return g;
+}
+
 void Renderer::drawOverlay(vkh::CommandBuffer cmd, vkh::Framebuffer framebuffer,
                            vkh::Extent2D extent, vkh::Buffer vbuf, std::uint32_t lineVertexCount,
                            std::uint32_t triangleVertexCount,
-                           const std::array<float, 16>& transform) {
+                           const std::array<float, 16>& transform, const GlyphResources* glyphs) {
     cmd.beginRenderPass(vkh::RenderPassBeginInfo{}
                             .setRenderPass(renderPass_.get())
                             .setFramebuffer(framebuffer)
@@ -831,6 +1079,16 @@ void Renderer::drawOverlay(vkh::CommandBuffer cmd, vkh::Framebuffer framebuffer,
         cmd.bindPipeline(vkh::PipelineBindPoint::eGraphics, overlayTrianglePipeline_.get());
         cmd.bindVertexBuffers(0u, vbuf, triOffset);
         cmd.draw(triangleVertexCount, 1u, 0u, 0u);
+    }
+    // Slug glyph quads (ADR-0023): own pipeline + atlas descriptor set; positions
+    // are already clip-space so the shared push-constant transform doesn't apply.
+    if (glyphs != nullptr && glyphs->vertexCount > 0u) {
+        const vkh::DeviceSize zeroOff = 0;
+        cmd.bindPipeline(vkh::PipelineBindPoint::eGraphics, glyphPipeline_.get());
+        cmd.bindDescriptorSets(vkh::PipelineBindPoint::eGraphics, glyphPipelineLayout_.get(), 0u,
+                               glyphs->set, nullptr);
+        cmd.bindVertexBuffers(0u, glyphs->vbuf.get(), zeroOff);
+        cmd.draw(glyphs->vertexCount, 1u, 0u, 0u);
     }
     cmd.endRenderPass();
 }
@@ -1074,8 +1332,10 @@ Status Renderer::recordFrame(vkh::CommandBuffer cmd, const Volume& volume,
                          vkh::AccessFlagBits::eShaderWrite,
                          vkh::AccessFlagBits::eColorAttachmentWrite
                              | vkh::AccessFlagBits::eColorAttachmentRead));
+        // Present path draws lines/triangles only; Slug glyph rendering in the
+        // viewer rides on the M7 annotation layer (ADR-0023 verifies headless).
         drawOverlay(cmd, frameFramebuffer_.get(), dstExtent, frameOverlayBuf_.get(), ovLineVerts,
-                    ovTriVerts, overlay->transform);
+                    ovTriVerts, overlay->transform, nullptr);
         cmd.pipelineBarrier(
             vkh::PipelineStageFlagBits::eColorAttachmentOutput,
             vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr, nullptr,

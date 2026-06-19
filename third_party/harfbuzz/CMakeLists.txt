@@ -19,3 +19,15 @@ target_link_libraries(harfbuzz_core PUBLIC Threads::Threads)
 if(NOT WIN32)
     target_link_libraries(harfbuzz_core PUBLIC m)
 endif()
+
+# libharfbuzz-gpu (ADR-0023): the experimental Slug glyph-outline encoder. Its
+# hb-static.cc is already in the core amalgamation, so it is NOT recompiled here;
+# the GPU lib links the core for it. The .glsl shaders ship with these sources and
+# are compiled separately by our glslc toolchain (not here).
+add_library(harfbuzz_gpu STATIC
+    src/hb-gpu.cc
+    src/hb-gpu-draw.cc
+    src/hb-gpu-paint.cc)
+add_library(harfbuzz::gpu ALIAS harfbuzz_gpu)
+target_include_directories(harfbuzz_gpu SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(harfbuzz_gpu PUBLIC harfbuzz_core)

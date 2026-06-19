@@ -64,8 +64,16 @@ ADR-0020, ADR-0021, and ADR-0022 are done. **One ADR remains** (0023; it needs b
   Slug shaders compiled through our `glslc`→SPIR-V→embed toolchain (ADR-0011/D-0022).
   Documented fallback: self-baked MSDF if the experimental API is unworkable.
 
-## Next Action (continue M6 IMPLEMENT)
-**Implement ADR-0023 (Slug GPU glyph rendering)** — the last M6 ADR. The GPU sources
+## Next Action
+**M6 RECORD (then milestone close).** All four M6 ADRs are implemented & committed
+(ADR-0023 = Slug GPU glyph rendering, headless path; D-0036, B-0010). Remaining:
+write the CHANGELOG § M6 (teeth: opacity invariance, overlay blend, ligature shaping,
+glyph coverage), flip MILESTONES M6 → Complete & locked, finish the HANDOFF rewrite,
+final M6 commit. Historical next-action notes for ADR-0023 follow.
+
+<details><summary>ADR-0023 implementation notes (done)</summary>
+
+**Implemented (Slug GPU glyph rendering)** — the last M6 ADR. The GPU sources
 are already vendored (D-0035): add `harfbuzz_gpu` to `third_party/harfbuzz/CMakeLists.txt`
 (`hb-gpu.cc`, `hb-gpu-draw.cc`, `hb-gpu-paint.cc`; links `harfbuzz_core` + `m`),
 extend `iv_text` to use it. Per `hb-gpu.h`: `hb_gpu_draw_create_or_fail()` →
@@ -83,6 +91,8 @@ Then **M6 RECORD**: write the CHANGELOG § M6 (all teeth: opacity invariance,
 overlay blend, ligature shaping, glyph coverage), MILESTONES M6 → Complete & locked,
 update HANDOFF, final M6 commit. Commit at verified checkpoints (so far: 53d7c84 =
 contract + ADR-0020; c951229 = ADR-0021; 3rd M6 commit = ADR-0022).
+
+</details>
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.

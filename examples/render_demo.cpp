@@ -130,7 +130,15 @@ int main(int argc, char** argv) {
         return p;
     };
 
+    RenderParams faceon = base;
+    faceon.eye = {0.5f, 0.5f, 2.2f};
+    faceon.target = {0.5f, 0.5f, 0.5f};
+    faceon.up = {0.0f, 1.0f, 0.0f};
+    faceon.colormapMode = 1; // HSV
+    faceon.densityScale = 5.0f;
+
     const std::vector<Demo> demos{
+        {"demo_phasewheel_hsv.png", &vortex, faceon}, // face-on phase wheel (HSV)
         {"demo_vortex_hsv.png", &vortex, withColormap(1, 0, 2.5f)},      // HSV, linear
         {"demo_vortex_twilight.png", &vortex, withColormap(0, 0, 2.5f)}, // twilight, linear
         {"demo_shell_twilight.png", &shell, withColormap(0, 0, 3.0f)},   // 3D shell, linear

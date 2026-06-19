@@ -45,10 +45,10 @@ std::vector<std::complex<float>> makeField() {
 
 } // namespace
 
-// teeth: round-trips both channels bit-exactly under the x-fastest layout
-// (ADR-0009). A wrong index order, swapped image extent, R/G swap, or a
-// norm-vs-abs / atan2-swap error makes at least one voxel diverge.
-TEST_CASE("Volume round-trips (magnitude, phase) bit-exactly (float)", "[vk][volume]") {
+// teeth: round-trips the stored complex value (Re, Im) bit-exactly under the
+// x-fastest layout (ADR-0015). A wrong index order, swapped image extent, or an
+// Re/Im swap makes at least one voxel diverge.
+TEST_CASE("Volume round-trips (Re, Im) bit-exactly (float)", "[vk][volume]") {
     auto ctx = Context::create();
     REQUIRE(ctx.has_value());
 
@@ -68,7 +68,7 @@ TEST_CASE("Volume round-trips (magnitude, phase) bit-exactly (float)", "[vk][vol
             for (std::uint32_t x = 0; x < kDims.nx; ++x) {
                 const auto& z0 = field[kDims.index(x, y, z)];
                 const auto t = rb->at(x, y, z);
-                if (t.magnitude != std::abs(z0) || t.phase != std::arg(z0)) {
+                if (t.re != z0.real() || t.im != z0.imag()) {
                     allMatch = false;
                 }
             }
@@ -78,11 +78,11 @@ TEST_CASE("Volume round-trips (magnitude, phase) bit-exactly (float)", "[vk][vol
     CHECK(ctx->validationClean());
 }
 
-// teeth: the double input path round-trips bit-exactly against a double-precision-
-// then-narrow expectation (D-0005). It need not equal the float path (D-0020); the
-// fault-injection tooth that pins input-precision derivation is recorded in
-// CHANGELOG.
-TEST_CASE("Volume double input round-trips its own fp32 expectation", "[vk][volume]") {
+// teeth: the double input path narrows (Re, Im) to fp32 on the host (ADR-0015
+// conversion point) and round-trips bit-exactly. Magnitude/phase are derived
+// in-shader (not stored), so there is no per-voxel double-vs-float divergence in
+// the stored texels here.
+TEST_CASE("Volume double input round-trips (Re, Im) narrowed to fp32", "[vk][volume]") {
     auto ctx = Context::create();
     REQUIRE(ctx.has_value());
 
@@ -104,8 +104,8 @@ TEST_CASE("Volume double input round-trips its own fp32 expectation", "[vk][volu
             for (std::uint32_t x = 0; x < kDims.nx; ++x) {
                 const auto& z0 = dd[kDims.index(x, y, z)];
                 const auto t = rd->at(x, y, z);
-                if (t.magnitude != static_cast<float>(std::abs(z0)) ||
-                    t.phase != static_cast<float>(std::arg(z0))) {
+                if (t.re != static_cast<float>(z0.real()) ||
+                    t.im != static_cast<float>(z0.imag())) {
                     allMatch = false;
                 }
             }

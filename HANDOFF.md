@@ -1,6 +1,6 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-19 by M4 session (Claude / Opus 4.8)
+**Last updated:** 2026-06-19 by M4 session + ADR-0015 phase-seam fix (Claude / Opus 4.8)
 **Active milestone:** M5 — Interactive viewer & performance contract (M4 complete)
 
 ## Current State
@@ -21,11 +21,19 @@ verified by pixel readback on the **NVIDIA RTX 4070**.
   `include/iv/vk/colormap_lut.hpp`) + analytic HSV, selectable.
 - **Refactor:** shared `iv/vk/commands.hpp` (`submitOneShot`, `imageBarrier`); the
   M3 `Volume` upload uses it now (no behavior change).
-- ADR-0011…0014 Accepted; D-0021…D-0023 journaled; B-0007 logged; index current.
+- **Phase-seam fix (ADR-0015, supersedes ADR-0009):** the volume now stores the
+  raw complex value (`R = Re, G = Im`); magnitude/phase are derived **in-shader**.
+  This fixed a wrong-color seam at the ±π branch cut caused by interpolating a
+  stored *angle*. `double` input is narrowed `double → float` **per component in
+  `deriveField`**; the magnitude range is still computed from `|z|` in input
+  precision (D-0025). `VolumeReadback::Texel` is now `{re, im}`.
+- ADR-0011…0015 Accepted (ADR-0009 **superseded by ADR-0015**); D-0021…D-0025
+  journaled; B-0007 logged; index current.
 
-All green from clean builds: Debug (210 assertions / 34 cases), ASan+UBSan ctest
-(both entries), non-Vulkan suite leak-checked. **Four teeth** demonstrated
-(CHANGELOG § M4). Committed (M4 implementation commit).
+All green from clean builds: Debug (**217 assertions / 35 cases**), ASan+UBSan
+ctest (both entries), non-Vulkan suite leak-checked. M4: four teeth (CHANGELOG
+§ M4); the ADR-0015 fix adds a seam-regression test with demonstrated teeth
+(CHANGELOG § Fix). Committed.
 
 ## In Flight (work started, not finished)
 - Nothing in flight. M4 is closed. M5 has not been started (no ADRs authored).
@@ -67,10 +75,17 @@ D-0016) or stays classic.
 - **Coordinate convention (ADR-0012):** right-handed, **+Y up**, volume = `[0,1]³`,
   **world position = texture coordinate**, image origin top-left. A wrong axis
   order shows up in the render and ties back to the M3 x-fastest layout.
+- **Volume stores `(Re, Im)`, not `(magnitude, phase)`** (ADR-0015, supersedes
+  ADR-0009): magnitude/phase are derived **in-shader** (`length` / `atan2`). Never
+  store or interpolate the phase *angle* — interpolating across the ±π cut
+  reintroduces the seam (a standing test, *"… across the branch cut (no seam)"*,
+  guards this). `VolumeReadback::Texel` is `{re, im}`.
 - **`R32G32_SFLOAT` linear filtering isn't core-mandatory**; the renderer queries
   it and falls back to nearest (`Renderer::volumeLinearFilter()`).
-- **Precision paths are not bit-identical** (D-0020): compare a path to a
-  same-precision expectation, never float-path to double-path.
+- **Precision** (D-0020 / D-0025): `double` input is narrowed `double → float` per
+  component in `deriveField`; magnitude/phase are fp32 in-shader; the magnitude
+  *range* is computed from `|z|` in input precision — so the range (not the stored
+  texels) is where any float/double ULP difference now lives.
 - **LSan scoped off for Vulkan-inclusive runs** (D-0015); the validation layer
   (incl. the pNext teardown messenger) is the Vulkan-object-leak gate. Don't "fix"
   driver leaks.
@@ -89,8 +104,9 @@ D-0016) or stays classic.
 ## Pointers
 - Governing process: `DEV_PROCESS.md`.
 - Milestone arc & M5 scope: `MILESTONES.md` (§ M5).
-- Contracts: `docs/adr/INDEX.md` — ADR-0001…0014 Accepted.
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0023), Backlog B-0001…B-0007.
+- Contracts: `docs/adr/INDEX.md` — ADR-0001…0015 Accepted (ADR-0009 superseded by
+  ADR-0015).
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0025), Backlog B-0001…B-0007.
 - M1–M4 work + teeth: `CHANGELOG.md`.
 - Demo: `examples/iv_render_demo [out_dir]` renders sample complex fields and
   writes PNGs via the owned `examples/png.hpp` (D-0024); outputs to gitignored

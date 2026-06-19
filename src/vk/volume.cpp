@@ -14,7 +14,7 @@ namespace vkh = ::vk;
 namespace {
 
 constexpr vkh::Format kVolumeFormat = vkh::Format::eR32G32Sfloat;
-constexpr std::size_t kChannels = 2; // (magnitude, phase)
+constexpr std::size_t kChannels = 2; // (Re, Im) per ADR-0015
 
 // One region covering the whole 3D image, tightly packed in the buffer
 // (bufferRowLength = bufferImageHeight = 0). Tight packing matches the x-fastest
@@ -115,7 +115,7 @@ Result<Volume> Volume::createImpl(const Context& ctx, std::span<const std::compl
         imageMem = *std::move(mem);
     }
 
-    // --- Host-visible staging buffer; derive (magnitude, phase) into it ---
+    // --- Host-visible staging buffer; pack (Re, Im) into it (ADR-0015) ---
     {
         auto r = take(device.createBuffer(vkh::BufferCreateInfo{}
                                               .setSize(byteSize)

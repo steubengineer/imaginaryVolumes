@@ -4,6 +4,51 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Fix — Phase seam: store complex (Re, Im), derive magnitude/phase in-shader (ADR-0015)
+
+**Status:** Complete (2026-06-19). **Governing ADRs:** ADR-0015 (supersedes
+ADR-0009). Decision: D-0025.
+
+### Problem
+M4 rendering showed a thin wrong-color seam along the negative-real axis (dark in
+twilight, cyan in HSV). Root cause: ADR-0009 stored per-voxel `phase = arg(z)`, and
+the GPU linearly interpolates texture samples — interpolating an *angle* across the
+±π branch cut averages +π and −π to ≈0, a spurious value. Magnitude was fine; only
+the angle is discontinuous.
+
+### Changed
+- The volume texture now stores the **raw complex value** (`R = Re(z), G = Im(z)`);
+  `magnitude = length(re,im)` and `phase = atan2(im,re)` are derived **per-sample in
+  `shaders/ray_march.comp`**. Interpolating the continuous complex value is correct
+  across the cut. (`iv/volume.hpp` `deriveField`; `iv::vk::Volume`;
+  `VolumeReadback::Texel` → `{re, im}`.)
+- **Precision (ADR-0015):** `double` input is narrowed `double → float` **per
+  component in `deriveField`** when filling the staging buffer; magnitude/phase are
+  computed in fp32 in-shader; the magnitude range (ADR-0010) is still computed from
+  `|z|` in input precision, then narrowed.
+- ADR-0009 → **Superseded by ADR-0015**; D-0004/D-0005 revised (D-0025).
+
+### Verification
+- Full suite green (**217 assertions / 35 cases**); ASan+UBSan `ctest` green.
+- M3 round-trip tests updated to `(re, im)`; M4 known-case renders unchanged.
+- New standing test *"Renderer: phase is correct across the branch cut (no seam)"*
+  renders a face-on phase wheel on a **coarse** volume (wide interpolation band) and
+  asserts the −x axis is red (HSV), not the interpolated-to-zero cyan.
+
+### Teeth evidence (ADR-0002 §2)
+Performed 2026-06-19; faults reverted; final clean rebuild green.
+
+1. **Diagnosis A/B (root cause).** Face-on HSV phase wheel: **linear** filtering →
+   a cyan line at `θ = ±π`; **nearest** filtering → clean. This isolated the cause
+   to linear interpolation of the stored angle across the branch cut (and ruled out
+   the renderer logic).
+2. **Seam-regression test has teeth — fault injection.** Temporarily reverted to
+   storing the phase *angle* (`deriveField`) and reading it back as phase (shader).
+   The new *"… across the branch cut (no seam)"* test went **RED** — the −x pixel
+   turned cyan, so `r > g+40` failed (`test_vk_renderer.cpp:263–264`). Restored →
+   green. (The same A/B at full resolution also confirmed the fix visually: the
+   face-on wheel is clean under linear filtering.)
+
 ## M4 — Ray-Marching Renderer & Transfer Function
 
 **Status:** Complete (2026-06-19).

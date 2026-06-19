@@ -43,6 +43,22 @@ std::vector<std::complex<float>> zSplitField(GridDims d, float mag, float phaseH
     return v;
 }
 
+// f = w = (x-0.5) + i(y-0.5): phase = azimuth (sweeps the full ±pi range,
+// crossing the branch cut), magnitude = radius. z-independent.
+std::vector<std::complex<float>> vortexField(GridDims d) {
+    std::vector<std::complex<float>> v(d.count());
+    for (std::uint32_t z = 0; z < d.nz; ++z) {
+        for (std::uint32_t y = 0; y < d.ny; ++y) {
+            for (std::uint32_t x = 0; x < d.nx; ++x) {
+                const float fx = (static_cast<float>(x) + 0.5f) / static_cast<float>(d.nx);
+                const float fy = (static_cast<float>(y) + 0.5f) / static_cast<float>(d.ny);
+                v[d.index(x, y, z)] = std::complex<float>(fx - 0.5f, fy - 0.5f);
+            }
+        }
+    }
+    return v;
+}
+
 } // namespace
 
 // teeth (pipeline + ADR-0013 zero handling): an all-zero field has alpha 0
@@ -211,5 +227,40 @@ TEST_CASE("Renderer: LUT colormap matches the twilight table and differs from HS
                      std::abs(static_cast<int>(cl.g) - static_cast<int>(ch.g)) +
                      std::abs(static_cast<int>(cl.b) - static_cast<int>(ch.b));
     CHECK(diff > 20);
+    CHECK(ctx->validationClean());
+}
+
+// teeth (ADR-0015): phase varies across the ±π branch cut. Storing the complex
+// value (not the angle) keeps interpolation correct, so the negative-real axis
+// renders its true HSV color (red), not the interpolated-to-zero color (cyan).
+// Regressing to a stored phase angle brings the cyan seam back here.
+TEST_CASE("Renderer: phase is correct across the branch cut (no seam)", "[vk][renderer]") {
+    auto ctx = Context::create();
+    REQUIRE(ctx.has_value());
+    auto rend = Renderer::create(*ctx);
+    REQUIRE(rend.has_value());
+
+    // A coarse volume makes the interpolation band across the y=0.5 cut wide (many
+    // pixels), so the test reliably samples it (a fine volume would tuck a thin
+    // seam between sampled rows). Render finer than the volume.
+    const GridDims d{8, 8, 8};
+    auto vol = Volume::create(*ctx, vortexField(d), d);
+    REQUIRE(vol.has_value());
+
+    RenderParams p;
+    p.eye = {0.5f, 0.5f, 2.2f}; // face-on, looking down -z
+    p.target = {0.5f, 0.5f, 0.5f};
+    p.up = {0.0f, 1.0f, 0.0f};
+    p.colormapMode = 1; // HSV
+    p.densityScale = 5.0f;
+    p.background = {0.0f, 0.0f, 0.0f, 1.0f};
+    auto img = rend->render(*vol, 96, 96, p);
+    REQUIRE(img.has_value());
+
+    // Left of center, center row: x<0.5, y≈0.5 (on the branch cut). theta ≈ ±π →
+    // red. Storing/interpolating the angle instead would interpolate to 0 → cyan.
+    const auto px = img->at(24, 48);
+    CHECK(static_cast<int>(px.r) > static_cast<int>(px.g) + 40);
+    CHECK(static_cast<int>(px.r) > static_cast<int>(px.b) + 40);
     CHECK(ctx->validationClean());
 }

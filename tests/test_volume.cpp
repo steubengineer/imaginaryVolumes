@@ -55,10 +55,11 @@ TEST_CASE("GridDims indexes x-fastest, 0-based", "[volume]") {
     CHECK(bijective);
 }
 
-// teeth: abs->R, arg->G derivation and channel order (ADR-0009). A norm-vs-abs
-// swap, an R/G swap, or an atan2-argument swap changes these exact values.
-// Pythagorean inputs give exact integer magnitudes.
-TEST_CASE("deriveField computes (|z|, arg z) in channel order", "[volume]") {
+// teeth: stores (Re, Im) in channel order, and computes the magnitude range from
+// |z| (ADR-0015 / ADR-0010). An Re/Im swap, or a norm-vs-abs error in the range,
+// changes these exact values. Pythagorean inputs give exact integer magnitudes.
+// (Magnitude/phase themselves are derived in-shader; see the renderer tests.)
+TEST_CASE("deriveField stores (Re, Im) and computes the magnitude range", "[volume]") {
     const GridDims d{2, 2, 2}; // 8 voxels
     const std::vector<std::complex<float>> in{{0.0f, 0.0f}, {3.0f, 4.0f},  {6.0f, 8.0f},
                                               {5.0f, 12.0f}, {8.0f, 6.0f}, {9.0f, 12.0f},
@@ -68,14 +69,13 @@ TEST_CASE("deriveField computes (|z|, arg z) in channel order", "[volume]") {
     std::vector<float> out(d.count() * 2u);
     const MagnitudeRange r = deriveField<float>(in, d, out);
 
-    const float expectedMag[8] = {0.f, 5.f, 10.f, 13.f, 10.f, 15.f, 7.f, 0.f};
     for (std::size_t i = 0; i < in.size(); ++i) {
-        CHECK(out[2u * i] == expectedMag[i]);
-        CHECK(out[2u * i + 1u] == std::arg(in[i]));
+        CHECK(out[2u * i] == in[i].real());      // R = Re(z)
+        CHECK(out[2u * i + 1u] == in[i].imag()); // G = Im(z)
     }
-    // minPositive excludes the two zeros; max ignores them too.
-    CHECK(r.minPositive == 5.0f);
-    CHECK(r.max == 15.0f);
+    // range from |z|: minPositive excludes the two zeros; max ignores them too.
+    CHECK(r.minPositive == 5.0f);  // |3+4i|
+    CHECK(r.max == 15.0f);         // |9+12i|
 }
 
 // teeth: an all-zero field has no positive magnitude — minPositive and max are
@@ -89,21 +89,21 @@ TEST_CASE("deriveField on an all-zero field yields a (0,0) range", "[volume]") {
     CHECK(r.max == 0.0f);
 }
 
-// teeth: the double path derives in double then narrows (D-0005). It round-trips
-// bit-exactly against a double-precision-then-narrow expectation. It is NOT
-// required to equal the float path (they differ by <=1 ULP for some inputs; see
-// D-0020).
-TEST_CASE("deriveField double path derives in double then narrows", "[volume]") {
+// teeth: the double path narrows (Re, Im) to fp32 on the host — the ADR-0015
+// conversion point. The magnitude range is computed from |z| in double then
+// narrowed (D-0005 retained for the range). Magnitude/phase are derived in-shader,
+// not here.
+TEST_CASE("deriveField double path narrows (Re, Im) to fp32", "[volume]") {
     const GridDims d{2, 2, 1};
     const std::vector<std::complex<double>> dd{{3.0, 4.0}, {6.0, 8.0}, {5.0, 12.0}, {0.0, 0.0}};
     std::vector<float> od(d.count() * 2u);
     const MagnitudeRange r = deriveField<double>(dd, d, od);
 
     for (std::size_t i = 0; i < dd.size(); ++i) {
-        CHECK(od[2u * i] == static_cast<float>(std::abs(dd[i])));
-        CHECK(od[2u * i + 1u] == static_cast<float>(std::arg(dd[i])));
+        CHECK(od[2u * i] == static_cast<float>(dd[i].real()));
+        CHECK(od[2u * i + 1u] == static_cast<float>(dd[i].imag()));
     }
-    CHECK(r.minPositive == 5.0f); // magnitudes 5,10,13 (exact); the zero is excluded
+    CHECK(r.minPositive == 5.0f); // |3+4i|=5, |6+8i|=10, |5+12i|=13 (exact); zero excluded
     CHECK(r.max == 13.0f);
 }
 

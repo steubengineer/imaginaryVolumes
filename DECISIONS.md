@@ -10,6 +10,32 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0025 — Volume stores (re, im); magnitude/phase derived in-shader (supersedes ADR-0009)
+- **Date / milestone:** 2026-06-19 / post-M4 (defect fix, CONTRACT)
+- **Choice / finding:** M4 rendering exposed a phase-seam artifact — the GPU
+  linearly interpolates the stored phase *angle*, and interpolating across the ±π
+  branch cut averages +π/−π to ≈0, painting a thin wrong-color seam on the
+  negative-real axis (cyan in HSV, dark in twilight). Confirmed by a face-on
+  phase-wheel **linear-vs-nearest A/B** (linear → seam; nearest → clean).
+- **Decision:** Store the **raw complex value** (R=Re, G=Im) instead of
+  `(magnitude, phase)`, and derive magnitude/phase **per-sample in the shader**.
+  Interpolating the continuous complex value is correct across the cut. Supersedes
+  **ADR-0009**; **revises D-0004** (store derived) and **D-0005** (derive in input
+  precision).
+- **Conversion point (double input):** each voxel's `re`/`im` is narrowed
+  `double → float` **on the host in `deriveField`** when written to the fp32
+  staging buffer; magnitude/phase are derived **in-shader in fp32**; the magnitude
+  range (ADR-0010) is still computed **on the host in input precision** then
+  narrowed.
+- **Rationale:** correctness (eliminates the seam); also simplifies the M3 upload
+  (store the value directly, no host abs/arg for storage); physically-correct
+  reconstruction of a sampled complex field.
+- **Contract impact:** ADR-0015 (Proposed → supersedes ADR-0009).
+  `VolumeReadback::Texel` changes `{magnitude, phase}` → `{re, im}`. ADR-0013/0014
+  contracts unchanged (they consume shader-derived magnitude/phase).
+- **Deferred alternatives:** nearest sampling; manual cos/sin trilinear; a
+  `(magnitude, cosθ, sinθ)` RGB32F layout — all rejected in ADR-0015.
+
 ### D-0024 — PNG demo export via an owned minimal encoder (no new dependency)
 - **Date / milestone:** 2026-06-19 / post-M4 (tooling)
 - **Choice:** How to save rendered frames as PNG for demos — add a PNG library

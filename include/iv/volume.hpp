@@ -3,9 +3,10 @@
 
 // Host-side volume data model (ADR-0008, ADR-0010): the public ingestion data
 // contract — a flat complex field plus grid dimensions under an x-fastest,
-// 0-based layout — together with the host derivation of per-voxel
-// (magnitude, phase) and the magnitude-range metadata. No Vulkan here; the GPU
-// resource that consumes this is iv::vk::Volume (iv/vk/volume.hpp, ADR-0009).
+// 0-based layout — together with the host packing of per-voxel (Re, Im) and the
+// magnitude-range metadata. Magnitude/phase are derived in-shader at render time
+// (ADR-0015), not stored. No Vulkan here; the GPU resource that consumes this is
+// iv::vk::Volume (iv/vk/volume.hpp, ADR-0015).
 
 #include "iv/assert.hpp"
 #include "iv/error.hpp"
@@ -66,11 +67,14 @@ struct VolumeOptions {
 [[nodiscard]] Status validateShape(std::size_t inputCount, GridDims dims); // count matches dims
 [[nodiscard]] Status validateOptions(const VolumeOptions& options);        // override is sane
 
-// Derive (magnitude, phase) for every voxel into `out` (length 2*count,
-// x-fastest interleaved: out[2*i] = |z|, out[2*i+1] = arg(z)), computing in the
-// input precision T and narrowing to float (D-0005), and return the auto
-// magnitude range (ADR-0010). Preconditions (IV_DEBUG_ASSERT):
-// in.size() == dims.count() and out.size() == 2*dims.count().
+// Pack the complex field into `out` (length 2*count, x-fastest interleaved:
+// out[2*i] = Re(z), out[2*i+1] = Im(z)) and return the auto magnitude range
+// (ADR-0010). Per ADR-0015 the texture stores the raw complex value; magnitude
+// and phase are derived in-shader from (Re, Im) at render time — so this is the
+// only place double input is narrowed to float (per component, here). The
+// magnitude range is computed from |z| in the input precision T and then narrowed,
+// so normalization keeps input-precision accuracy. Preconditions
+// (IV_DEBUG_ASSERT): in.size() == dims.count() and out.size() == 2*dims.count().
 template <class T>
 [[nodiscard]] MagnitudeRange deriveField(std::span<const std::complex<T>> in, GridDims dims,
                                          std::span<float> out) {
@@ -82,11 +86,11 @@ template <class T>
     bool anyPositive = false;
     const std::size_t n = dims.count();
     for (std::size_t i = 0; i < n; ++i) {
-        const T mag = std::abs(in[i]);    // |z|
-        const T phase = std::arg(in[i]);  // atan2(imag, real), principal value in [-pi, pi]
-        out[2u * i] = static_cast<float>(mag);
-        out[2u * i + 1u] = static_cast<float>(phase);
+        const std::complex<T> z = in[i];
+        out[2u * i] = static_cast<float>(z.real());      // R = Re(z)  (double -> float here)
+        out[2u * i + 1u] = static_cast<float>(z.imag()); // G = Im(z)
 
+        const T mag = std::abs(z); // magnitude range only (ADR-0010), in input precision
         if (mag > maxMag) {
             maxMag = mag;
         }

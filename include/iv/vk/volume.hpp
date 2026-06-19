@@ -1,11 +1,12 @@
 #ifndef IV_VK_VOLUME_HPP
 #define IV_VK_VOLUME_HPP
 
-// GPU-resident volume texture (ADR-0009): a 3D RG32F image holding per-voxel
-// (magnitude, phase) derived from a complex field (ADR-0008), plus the auto /
-// overridden magnitude range (ADR-0010). Move-only, single-owner; it borrows the
-// Context's device/queue/pool and must not outlive that Context. Not thread-safe
-// (ADR-0007): a Debug thread-affinity check guards each accessor.
+// GPU-resident volume texture (ADR-0015): a 3D RG32F image holding the per-voxel
+// complex value (R = Re, G = Im) of a field (ADR-0008), plus the auto / overridden
+// magnitude range (ADR-0010). Magnitude and phase are derived in-shader from
+// (Re, Im) at render time. Move-only, single-owner; it borrows the Context's
+// device/queue/pool and must not outlive that Context. Not thread-safe (ADR-0007):
+// a Debug thread-affinity check guards each accessor.
 
 #include "iv/error.hpp"
 #include "iv/volume.hpp"
@@ -21,14 +22,14 @@
 
 namespace iv::vk {
 
-// Host copy of the texture read back from the device (ADR-0009), for verification
+// Host copy of the texture read back from the device (ADR-0015), for verification
 // and diagnostics. Tightly packed, x-fastest: texel (x,y,z) lives at the float
-// pair starting at dims().index(x,y,z)*2.
+// pair starting at dims().index(x,y,z)*2, holding the raw complex value (Re, Im).
 class VolumeReadback {
 public:
     struct Texel {
-        float magnitude;
-        float phase;
+        float re;
+        float im;
     };
 
     VolumeReadback(GridDims dims, std::vector<float> data);

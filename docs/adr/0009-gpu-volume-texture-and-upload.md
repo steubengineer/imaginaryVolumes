@@ -1,6 +1,6 @@
 # ADR-0009: GPU Volume Texture — Format, Derived Contents, Precision & Upload
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0015
 - **Date:** 2026-06-19
 - **Supersedes:** none
 

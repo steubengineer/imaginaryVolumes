@@ -1,0 +1,5 @@
+Catch2 amalgamated distribution
+Version: v3.7.1
+Source: https://github.com/catchorg/Catch2 (extras/catch_amalgamated.{hpp,cpp})
+Fetched: 2026-06-18
+Vendored per ADR-0002. Do not edit; replace wholesale to upgrade and bump this note.

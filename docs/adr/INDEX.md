@@ -12,3 +12,6 @@
 | [ADR-0005](0005-instance-device-queue-selection.md) | Instance, Physical-Device & Queue Selection | Accepted | — |
 | [ADR-0006](0006-offscreen-render-target-and-readback.md) | Offscreen Render Target, Format & Host-Readback Convention | Accepted | — |
 | [ADR-0007](0007-concurrency-baseline.md) | Concurrency Baseline | Accepted | — |
+| [ADR-0008](0008-volume-ingestion-api-and-layout.md) | Volume Ingestion API & Data-Layout Convention | Accepted | — |
+| [ADR-0009](0009-gpu-volume-texture-and-upload.md) | GPU Volume Texture — Format, Derived Contents, Precision & Upload | Accepted | — |
+| [ADR-0010](0010-magnitude-range-metadata.md) | Magnitude-Range Metadata | Accepted | — |

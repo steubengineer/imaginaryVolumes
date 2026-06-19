@@ -93,7 +93,7 @@ renderer headlessly via deterministic pixel readback before the window exists.
   `CHANGELOG.md` (§ M2), evidence 1–6.
 
 ## M3 — Volume Data Model & GPU Upload
-- **Status:** Planned
+- **Status:** Complete (2026-06-19) — locked (§2.5).
 - **Goal:** A public API that accepts a flat `std::complex<float|double>` array
   plus `(nx, ny, nz)`, under a defined memory-layout/indexing convention, and
   uploads it to a 3D texture storing per-voxel `(magnitude, phase)` as `RG32F`.
@@ -101,12 +101,17 @@ renderer headlessly via deterministic pixel readback before the window exists.
   then stored as `fp32`. A magnitude-normalization range (auto global-max or
   caller-specified) is established for downstream opacity mapping.
 - **Done when:**
-  - [ ] Public ingestion API defined (array + dimensions + precision).
-  - [ ] Memory-layout/indexing convention fixed (default x-fastest, 0-based).
-  - [ ] `(magnitude, phase)` `RG32F` 3D texture populated from the input.
-  - [ ] A known small field round-trips: texture readback matches expected
-        magnitude and phase within the tolerance policy.
-  - [ ] Both `float` and `double` input paths verified.
+  - [x] Public ingestion API defined (array + dimensions + precision):
+        `iv::vk::Volume::create(Context&, span<const complex<float|double>>,
+        GridDims, VolumeOptions)`.
+  - [x] Memory-layout/indexing convention fixed (x-fastest, 0-based; `iv::GridDims`,
+        pinned by `static_assert`).
+  - [x] `(magnitude, phase)` `R32G32Sfloat` 3D texture populated from the input.
+  - [x] A known small field round-trips: texture readback matches the expected
+        magnitude and phase **bit-exactly** (each precision path vs its own
+        input-precision-then-narrow expectation; D-0020 refined the original
+        "tolerance policy" wording to exact equality).
+  - [x] Both `float` and `double` input paths verified (NVIDIA RTX 4070).
 - **Expected ADRs:**
   - Public input API & data-layout convention (a §1.1 interface *and* a §5
     convention: flat-array indexing, dimension semantics, index width).
@@ -119,7 +124,11 @@ renderer headlessly via deterministic pixel readback before the window exists.
   magnitude/phase. Teeth shown by fault injection: a wrong index order
   (`x + nx*(y + ny*z)` vs a transposed form) or a wrong `abs`/`arg` formula
   makes the readback diverge → red; correct form → green.
-- **Actual ADRs:** _(filled at completion)_
+- **Actual ADRs:** ADR-0008 (ingestion API & data-layout), ADR-0009 (GPU volume
+  texture: format/derived contents/precision/upload), ADR-0010 (magnitude-range
+  metadata). Supporting decisions: D-0017 (raw allocation), D-0018 (ingestion/
+  upload contract), D-0019 (range metadata), D-0020 (precision-path divergence).
+  Teeth demonstrated in `CHANGELOG.md` (§ M3), evidence 1–8.
 
 ## M4 — Ray-Marching Renderer & Transfer Function
 - **Status:** Planned

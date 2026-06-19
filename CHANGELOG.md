@@ -4,6 +4,91 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## M3 — Volume Data Model & GPU Upload
+
+**Status:** Complete (2026-06-19).
+**Governing ADRs:** ADR-0008 (ingestion API & data-layout convention), ADR-0009
+(GPU volume texture: format/derived contents/precision/upload), ADR-0010
+(magnitude-range metadata). Decisions: D-0017 (raw allocation), D-0018
+(ingestion/upload contract), D-0019 (range metadata), D-0020 (precision paths are
+not bit-identical).
+
+### Added
+- **Host data model (ADR-0008/0010):** `iv::GridDims` (x-fastest, 0-based
+  `index`/`count`, 64-bit arithmetic; the convention pinned by `static_assert`),
+  `iv::MagnitudeRange`, `iv::VolumeOptions`; host validators (`validateGrid`,
+  `validateShape`, `validateOptions`); `iv::deriveField<T>` — per-voxel
+  `(|z|, arg z)` computed in input precision then narrowed to fp32, returning the
+  auto magnitude range (`minPositive` excludes zeros). (`include/iv/volume.hpp`,
+  `src/volume.cpp`.)
+- **Shared memory helper (ADR-0009, D-0017):** `iv::vk::findMemoryType` plus
+  `allocateAndBindImage` / `allocateAndBindBuffer` — the generalized successors to
+  M2's file-local `findMemoryType`; `clearAndReadback` refactored onto them. Raw
+  `vkAllocateMemory`; VMA still deferred (B-0006). (`include/iv/vk/memory.hpp`,
+  `src/vk/memory.cpp`.)
+- **GPU volume (ADR-0009):** `iv::vk::Volume` — move-only 3D `R32G32Sfloat`
+  texture (R = raw magnitude, G = phase ∈ [−π, π]); host-visible staging filled
+  x-fastest + `copyBufferToImage`; classic 1.0 barriers (D-0016); rests in
+  `eShaderReadOnlyOptimal` with a sampling view (the sampler is deferred to M4);
+  borrows the Context's device/queue/pool. `readback()` round-trips to the host
+  bit-exactly and restores the resting layout. `magnitudeRange()`
+  (override-else-auto) and `autoMagnitudeRange()`. Separate `float` and `double`
+  input overloads. (`include/iv/vk/volume.hpp`, `src/vk/volume.cpp`.)
+
+### Verification
+- Build: **warning-clean** under the strict set + `-Werror` (Debug, ASan+UBSan).
+- Debug: full suite green — **169 assertions / 29 cases** on the NVIDIA RTX 4070.
+- ASan+UBSan: `ctest` green (both entries); LSan scoped per D-0015; the non-Vulkan
+  suite (incl. the new host `[volume]` tests) leak-checked clean (`~[vk]`).
+- Round-trips verified **bit-exactly** for both `float` and `double` input on the
+  real GPU; create/upload/readback/teardown validation-clean (pNext messenger
+  gate); identical across repeated runs (deterministic, ADR-0007).
+
+### Teeth evidence (ADR-0002 §2)
+All performed 2026-06-19; each fault reverted; the final clean rebuild is green.
+(Teeth are cited by test-case name — Catch2 randomizes case order.)
+
+1. **Index-order convention (ADR-0008) — compile-time.** Transposed
+   `GridDims::index` to z-fastest. The header `static_assert`s fired:
+   `error: static assertion failed` at `include/iv/volume.hpp:47-49`
+   (e.g. `index(1,0,0) == 1`). The x-fastest convention is pinned at compile time.
+   Reverted.
+2. **R/G channel order (ADR-0009) — fault injection.** Swapped the magnitude/phase
+   writes in `deriveField`. Went **RED**: *"deriveField computes (|z|, arg z) in
+   channel order"*, *"deriveField double path derives in double then narrows"*,
+   and both GPU round-trips (*"… bit-exactly (float)"*, *"… double input round-trips
+   its own fp32 expectation"*). Reverted.
+3. **Magnitude formula (ADR-0009) — fault injection.** `std::abs` → `std::norm`
+   (|z|²). Went **RED**: *"deriveField computes (|z|, arg z) in channel order"*
+   (every non-zero voxel's magnitude, plus the range). Reverted.
+4. **Phase formula (ADR-0009) — fault injection.** Negated the phase
+   (`std::arg(std::conj(z))`, standing in for an `atan2`-argument swap). Went
+   **RED**: the phase assertions of *"deriveField computes (|z|, arg z) in channel
+   order"* for non-zero-phase voxels. Reverted.
+5. **Precision policy (ADR-0009 / D-0005 / D-0020) — fault injection.** Derived
+   after casting the input to `float` regardless of `T`. **Only the double GPU
+   round-trip** (*"… double input round-trips its own fp32 expectation"*) went
+   **RED**; every `float` test stayed green — proving derivation happens in input
+   precision and exhibiting exactly the float/double ULP divergence of D-0020.
+   Reverted.
+6. **Magnitude-range zero-exclusion (ADR-0010) — fault injection.** Changed
+   `mag > 0` to `mag >= 0` so zeros pollute `minPositive`. Went **RED**: the
+   `minPositive` assertions of the two `deriveField` tests and
+   *"Volume exposes auto and overridden magnitude range"*. Reverted.
+7. **Shape validation (ADR-0008) — fault injection.** Dropped the `size == count`
+   check in `validateShape`. A wrong-sized input was accepted; went **RED**:
+   *"validators reject malformed ingestion inputs"* and
+   *"Volume::create rejects malformed inputs"*. Reverted.
+8. **Override validation (ADR-0010) — fault injection.** Dropped the override
+   sanity check in `validateOptions`. An invalid `max < minPositive` override was
+   accepted; went **RED**: *"validators reject malformed ingestion inputs"* and
+   *"Volume::create rejects malformed inputs"*. Reverted.
+
+(Test-robustness note: the rejection assertions use a short-circuiting `rejected()`
+helper — `!has_value() && error().code == c` — so a fault that wrongly *succeeds*
+fails the CHECK cleanly instead of calling `.error()` on a value, which would be
+UB on `std::expected`.)
+
 ## M2 — Vulkan Headless Bring-Up
 
 **Status:** Complete (2026-06-19).

@@ -1,33 +1,14 @@
 #include "iv/vk/offscreen.hpp"
 
 #include "iv/assert.hpp"
+#include "iv/vk/memory.hpp"
 #include "iv/vk/result.hpp"
 #include "iv/vk/unique.hpp"
 
 #include <cstring>
 #include <limits>
-#include <optional>
 
 namespace iv::vk {
-namespace {
-
-namespace vkh = ::vk;
-
-std::optional<std::uint32_t> findMemoryType(vkh::PhysicalDevice pd,
-                                            std::uint32_t typeBits,
-                                            vkh::MemoryPropertyFlags required) {
-    const auto props = pd.getMemoryProperties();
-    for (std::uint32_t i = 0; i < props.memoryTypeCount; ++i) {
-        const bool typeAllowed = (typeBits & (1u << i)) != 0u;
-        const bool hasProps = (props.memoryTypes[i].propertyFlags & required) == required;
-        if (typeAllowed && hasProps) {
-            return i;
-        }
-    }
-    return std::nullopt;
-}
-
-} // namespace
 
 ImageReadback::ImageReadback(std::uint32_t width, std::uint32_t height,
                              std::vector<std::uint8_t> bytes)
@@ -79,27 +60,12 @@ Result<ImageReadback> clearAndReadback(const Context& ctx, std::uint32_t width,
         image = Unique<vkh::Image>(*r, [device](vkh::Image h) { device.destroyImage(h); });
     }
     {
-        const auto req = device.getImageMemoryRequirements(image.get());
-        const auto type = findMemoryType(phys, req.memoryTypeBits,
-                                         vkh::MemoryPropertyFlagBits::eDeviceLocal);
-        if (!type) {
-            return make_error(Errc::unsupported_configuration,
-                              "no device-local memory type for the offscreen image");
+        auto mem = allocateAndBindImage(device, phys, image.get(),
+                                        vkh::MemoryPropertyFlagBits::eDeviceLocal, "offscreen image");
+        if (!mem) {
+            return std::unexpected(std::move(mem).error());
         }
-        auto r = take(device.allocateMemory(vkh::MemoryAllocateInfo{}
-                                                .setAllocationSize(req.size)
-                                                .setMemoryTypeIndex(*type)),
-                      "allocateMemory(image)");
-        if (!r) {
-            return std::unexpected(std::move(r).error());
-        }
-        imageMem = Unique<vkh::DeviceMemory>(
-            *r, [device](vkh::DeviceMemory m) { device.freeMemory(m); });
-        if (auto s = check(device.bindImageMemory(image.get(), imageMem.get(), 0),
-                           "bindImageMemory");
-            !s) {
-            return std::unexpected(std::move(s).error());
-        }
+        imageMem = *std::move(mem);
     }
 
     // --- Host-visible staging buffer for readback ---
@@ -115,28 +81,14 @@ Result<ImageReadback> clearAndReadback(const Context& ctx, std::uint32_t width,
         buffer = Unique<vkh::Buffer>(*r, [device](vkh::Buffer h) { device.destroyBuffer(h); });
     }
     {
-        const auto req = device.getBufferMemoryRequirements(buffer.get());
-        const auto type = findMemoryType(phys, req.memoryTypeBits,
+        auto mem = allocateAndBindBuffer(device, phys, buffer.get(),
                                          vkh::MemoryPropertyFlagBits::eHostVisible
-                                             | vkh::MemoryPropertyFlagBits::eHostCoherent);
-        if (!type) {
-            return make_error(Errc::unsupported_configuration,
-                              "no host-visible|coherent memory type for the staging buffer");
+                                             | vkh::MemoryPropertyFlagBits::eHostCoherent,
+                                         "offscreen staging buffer");
+        if (!mem) {
+            return std::unexpected(std::move(mem).error());
         }
-        auto r = take(device.allocateMemory(vkh::MemoryAllocateInfo{}
-                                                .setAllocationSize(req.size)
-                                                .setMemoryTypeIndex(*type)),
-                      "allocateMemory(buffer)");
-        if (!r) {
-            return std::unexpected(std::move(r).error());
-        }
-        bufferMem = Unique<vkh::DeviceMemory>(
-            *r, [device](vkh::DeviceMemory m) { device.freeMemory(m); });
-        if (auto s = check(device.bindBufferMemory(buffer.get(), bufferMem.get(), 0),
-                           "bindBufferMemory");
-            !s) {
-            return std::unexpected(std::move(s).error());
-        }
+        bufferMem = *std::move(mem);
     }
 
     // --- Command buffer ---

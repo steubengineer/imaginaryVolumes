@@ -10,6 +10,82 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0020 — Precision paths are not bit-identical; each is bit-exact to its own precision
+- **Date / milestone:** 2026-06-19 / M3 (IMPLEMENT/VERIFY)
+- **Choice / finding:** ADR-0009's *Verification* narrative claimed the `float`
+  and `double` input paths produce identical fp32 texels. Implementation testing
+  disproved it: for some voxels `arg` (atan2) computed in `double` then narrowed
+  differs from the `float` computation by 1 ULP — e.g. `z = (12, -5)`:
+  `-0.394791126f` (double) vs `-0.394791096f` (float).
+- **Decision:** This divergence is correct and intended (D-0005): derive in input
+  precision, then narrow; the double path is the more accurate. The **binding
+  Contract Specification** of ADR-0009 (bit-exact round-trip vs a *same*-precision-
+  then-narrow expectation) is unchanged and holds. Correct only ADR-0009's
+  *Verification* narrative (drop the "identical fp32 texels" claim); each test now
+  asserts a path against its own-precision expectation, and the float/double
+  divergence is itself evidence of input-precision derivation.
+- **Contract impact:** none to ADR-0009's Contract Specification; refines its
+  Verification narrative (journaled here, per the D-0016 precedent of refining an
+  ADR's narrative without touching its binding contract).
+- **Deferred alternatives:** none.
+
+### D-0019 — Magnitude-range metadata: exclude zeros from min, allow caller override
+- **Date / milestone:** 2026-06-19 / M3 (CONTRACT)
+- **Choice:** What magnitude statistics to expose for M4's opacity normalization,
+  and whether the caller can pin them.
+- **Decision:** During the ingestion host pass, compute `max` (greatest `abs`)
+  and `minPositive` (least *strictly-positive* `abs`; `0` if the field is all-
+  zero), in input precision then narrowed to fp32. Expose `magnitudeRange()`
+  (override-if-given else auto) and `autoMagnitudeRange()` (always auto). A
+  caller may override via `VolumeOptions::magnitudeRange` (validated
+  `minPositive>=0 && max>=minPositive`). The normalization *formula* (linear/log,
+  degenerate handling) stays in M4.
+- **Rationale:** The host already visits every sample (D-0004/0009), so the range
+  is free; log opacity needs a positive floor, so zeros are excluded from
+  `minPositive`; an override pins normalization across animation frames/series.
+- **Contract impact:** ADR-0010 (Proposed). Range is metadata, not stored in the
+  texture (keeps raw magnitude per D-0004).
+- **Deferred alternatives:** GPU-side reduction; mean/percentile stats — not
+  needed for the M4 contract.
+
+### D-0018 — M3 ingestion API & GPU-upload contract (realizes D-0004/0005/0006)
+- **Date / milestone:** 2026-06-19 / M3 (CONTRACT)
+- **Choice:** Concrete shape of the public ingestion API and the GPU upload that
+  realizes the founding field decisions (D-0004 derived storage, D-0005
+  precision, D-0006 x-fastest layout).
+- **Decision:** Input is `std::span<const std::complex<float|double>>` +
+  `iv::GridDims{nx,ny,nz}` (x-fastest 0-based `index`/`count`, 64-bit arithmetic);
+  entry is `iv::vk::Volume::create(Context&, span, dims, VolumeOptions)`. The span
+  is borrowed for the call only. Upload derives `(abs, arg)` in input precision →
+  narrowed fp32, fills a tightly-packed staging buffer in x-fastest order, and
+  `copyBufferToImage` into a device-local 3D **RG32F** image (R=magnitude raw,
+  G=phase rad), resting in `eShaderReadOnlyOptimal` with a sampling view (sampler
+  → M4). A move-only `Volume` owns image/memory/view and borrows the Context
+  device; round-trip readback is **bit-exact** (TRANSFER copy, no filter/convert).
+  Classic 1.0 barriers (D-0016); raw allocation via a generalized `findMemoryType`
+  helper (D-0017).
+- **Rationale:** Mirrors M2's `create`/RAII/staging-fence patterns; bit-exact
+  RG32F readback gives strong teeth (transposed fill, R/G swap, `norm`-vs-`abs`,
+  `atan2`-arg-swap all go red); raw magnitude keeps M4's linear/log toggle free.
+- **Contract impact:** ADR-0008 (ingestion API + layout, Proposed), ADR-0009
+  (texture/precision/upload, Proposed). Closes the "ADR pending in M3" notes on
+  D-0004/0005/0006.
+- **Deferred alternatives:** caller-specified strides; half/8-bit storage; VMA
+  (B-0006) — all rejected for M3 in the ADRs.
+
+### D-0017 — M3 keeps raw allocation; VMA deferred
+- **Date / milestone:** 2026-06-19 / M3 (CONTRACT)
+- **Choice:** Adopt the Vulkan Memory Allocator (VMA) now, or keep hand-rolled
+  `vkAllocateMemory` for M3?
+- **Decision:** Keep raw allocation for M3; generalize M2's
+  `findMemoryType`/allocate helper into a small shared utility. Defer VMA.
+- **Rationale:** M3's needs are modest (one 3D image + a staging buffer); matches
+  the project's minimal-deps / own-the-boilerplate stance; no new dependency now.
+- **Contract impact:** none (no new dependency). Adopting VMA later requires a
+  dependency ADR (§1.1).
+- **Deferred alternatives:** VMA stays open at Backlog B-0006 — revisit at M4/M5
+  when images, uniforms, and buffers proliferate.
+
 ### D-0016 — M2 uses core 1.0 pipeline barriers (no synchronization2 feature)
 - **Date / milestone:** 2026-06-19 / M2 (IMPLEMENT)
 - **Choice:** ADR-0006's narrative mentioned synchronization2 barriers, but

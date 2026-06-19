@@ -57,9 +57,12 @@ endif()
 add_library(iv
     src/error.cpp
     src/assert.cpp
+    src/volume.cpp
     src/vk/result.cpp
+    src/vk/memory.cpp
     src/vk/context.cpp
-    src/vk/offscreen.cpp)
+    src/vk/offscreen.cpp
+    src/vk/volume.cpp)
 add_library(iv::iv ALIAS iv)
 target_include_directories(iv PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)

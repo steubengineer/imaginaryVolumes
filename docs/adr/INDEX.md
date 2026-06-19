@@ -15,3 +15,7 @@
 | [ADR-0008](0008-volume-ingestion-api-and-layout.md) | Volume Ingestion API & Data-Layout Convention | Accepted | — |
 | [ADR-0009](0009-gpu-volume-texture-and-upload.md) | GPU Volume Texture — Format, Derived Contents, Precision & Upload | Accepted | — |
 | [ADR-0010](0010-magnitude-range-metadata.md) | Magnitude-Range Metadata | Accepted | — |
+| [ADR-0011](0011-rendering-substrate-and-shader-toolchain.md) | Rendering Substrate & Shader Toolchain | Accepted | — |
+| [ADR-0012](0012-camera-raybox-and-compositing.md) | Camera, Ray/Box Intersection & DVR Compositing | Accepted | — |
+| [ADR-0013](0013-opacity-transfer-function.md) | Opacity Transfer Function (abs → α) | Accepted | — |
+| [ADR-0014](0014-cyclic-phase-colormap.md) | Cyclic Phase Colormap (arg → RGB) | Accepted | — |

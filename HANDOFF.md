@@ -1,99 +1,98 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-19 by M3 session (Claude / Opus 4.8)
-**Active milestone:** M4 — Ray-marching renderer & transfer function (M3 complete)
+**Last updated:** 2026-06-19 by M4 session (Claude / Opus 4.8)
+**Active milestone:** M5 — Interactive viewer & performance contract (M4 complete)
 
 ## Current State
-**M3 is Complete and locked** (MILESTONES.md § M3; CHANGELOG.md § M3). A complex
-field can now be ingested and uploaded to the GPU as a 3D texture, verified by
-bit-exact readback on the **NVIDIA RTX 4070**:
-- **Host data model** (`iv/volume.hpp`, `src/volume.cpp`): `iv::GridDims`
-  (x-fastest, 0-based `index`/`count`, 64-bit; pinned by `static_assert`),
-  `iv::MagnitudeRange`, `iv::VolumeOptions`; validators
-  (`validateGrid`/`validateShape`/`validateOptions`); `iv::deriveField<T>` —
-  per-voxel `(|z|, arg z)` derived in input precision, narrowed to fp32, with the
-  auto magnitude range (`minPositive` excludes zeros).
-- **Shared memory helper** (`iv/vk/memory.hpp`, `src/vk/memory.cpp`):
-  `findMemoryType` + `allocateAndBindImage`/`allocateAndBindBuffer` (D-0017,
-  generalized from M2; `clearAndReadback` now uses them). Raw allocation; VMA
-  deferred (B-0006).
-- **GPU volume** (`iv/vk/volume.hpp`, `src/vk/volume.cpp`): `iv::vk::Volume` —
-  move-only 3D `R32G32Sfloat` (R = raw magnitude, G = phase ∈ [−π,π]); staging +
-  `copyBufferToImage`; classic 1.0 barriers (D-0016); rests in
-  `eShaderReadOnlyOptimal` + a sampling view (sampler → M4); `readback()`
-  (bit-exact); `magnitudeRange()` / `autoMagnitudeRange()`; float & double
-  overloads.
-- ADR-0008/0009/0010 Accepted; D-0017…D-0020 journaled; index current.
+**M4 is Complete and locked** (MILESTONES.md § M4; CHANGELOG.md § M4). The volume
+now renders: a complex field uploaded by M3 is ray-marched to an image and
+verified by pixel readback on the **NVIDIA RTX 4070**.
+- **Shader toolchain (ADR-0011, D-0022):** `shaders/ray_march.comp` → `glslc` at
+  build (CMake `find_program`, fatal if missing) → embedded into `libiv` by
+  `tools/embed_spirv.cmake` (`iv/vk/shaders.hpp`, `makeShaderModule`).
+- **Renderer (ADR-0011/0012):** `iv::vk::Renderer` — compute pipeline (1 ray/pixel,
+  8×8), samples the volume, writes an `R8G8B8A8_UNORM` storage image, reads it back
+  (ADR-0006 path → `ImageReadback`). Fixed pinhole camera (hand-rolled `vec3`, no
+  GLM); slab ray/box vs `[0,1]³`; front-to-back `over` + early-ray termination.
+  (`include/iv/vk/renderer.hpp`, `src/vk/renderer.cpp`.)
+- **Transfer fn (ADR-0013) + colormap (ADR-0014):** linear/log opacity over
+  `[minPositive,max]` (log floor `minPositive`; degenerate → 0, no NaN);
+  `t=(θ+π)/2π` cyclic; 256-entry twilight LUT (`tools/gen_colormap.py` →
+  `include/iv/vk/colormap_lut.hpp`) + analytic HSV, selectable.
+- **Refactor:** shared `iv/vk/commands.hpp` (`submitOneShot`, `imageBarrier`); the
+  M3 `Volume` upload uses it now (no behavior change).
+- ADR-0011…0014 Accepted; D-0021…D-0023 journaled; B-0007 logged; index current.
 
-All green from clean builds: Debug (169 assertions / 29 cases), ASan+UBSan ctest
-(both entries), non-Vulkan suite leak-checked (`~[vk]`). **Eight teeth** demonstrated
-(CHANGELOG § M3). Not yet committed (see Next Action / your call on committing).
+All green from clean builds: Debug (210 assertions / 34 cases), ASan+UBSan ctest
+(both entries), non-Vulkan suite leak-checked. **Four teeth** demonstrated
+(CHANGELOG § M4). Committed (M4 implementation commit).
 
 ## In Flight (work started, not finished)
-- Nothing in flight. M3 is closed. M4 has not been started (no ADRs authored).
+- Nothing in flight. M4 is closed. M5 has not been started (no ADRs authored).
 
 ## Next Action
-Begin **M4 — Ray-marching renderer & transfer function** at its CONTRACT phase.
-Per MILESTONES § M4, the expected ADRs are: rendering technique & compositing
-model (ray-marched DVR, step size, early-ray termination, front-to-back); the
-transfer-function contract (linear/log opacity over `[minPositive, max]`,
-near-zero / `log(0)` handling — consumes ADR-0010's range); the cyclic colormap
-(`arg`→color: perceptually-uniform default + selectable HSV, per D-0007); and the
-camera & coordinate-frame/handedness/up-axis convention. ORIENT first (§3.0),
-then author those ADRs as Proposed and get them Accepted **before** implementing.
+Begin **M5 — Interactive viewer & performance contract** at its CONTRACT phase
+(MILESTONES § M5). Expected ADRs: the windowing/surface dependency (**GLFW** — a
+new third-party dependency, D-0002, §1.1 ⇒ a dependency ADR and a vendoring/
+find_package decision under ADR-0001); the swapchain/present contract (format,
+present mode, resize/recreation); the interaction/camera-control API (orbit/zoom
+driving `RenderParams`); and the performance contract (target FPS, volume size,
+hardware class) with an enforcing benchmark. ORIENT first (§3.0); author those
+ADRs as Proposed and get them Accepted **before** implementing. (M5 may split per
+§2.2 if its ADRs exceed ~5.)
 
-M4 builds directly on M3: it samples the `iv::vk::Volume` (create its **sampler**
-now — deferred from M3), renders into the M2 `clearAndReadback` offscreen target
-(`R8G8B8A8_UNORM`), and verifies known cases by pixel readback. Consider whether
-sync2 / dynamic rendering is worth enabling here (deferred at D-0016).
+M5 builds on M4: it drives `iv::vk::Renderer` (orbit/zoom update `RenderParams`),
+and presents the rendered `R8G8B8A8_UNORM` image to a swapchain (blit/copy — the
+compute substrate, D-0021, does not draw to the swapchain directly). Decide
+whether the present path enables `synchronization2`/dynamic-rendering (deferred at
+D-0016) or stays classic.
 
 ## Known-Broken / Blocked
-- Nothing broken. No blockers. M4 implementation is gated on authoring + accepting
-  its ADRs (not yet written).
-- VMA still deferred (D-0017); B-0006 remains open — M4 adds a sampler + pipeline,
-  so revisit whether allocations now justify it.
+- Nothing broken. No blockers. M5 is gated on authoring + accepting its ADRs.
+- VMA still deferred (D-0017); B-0006 open — M5 adds swapchain images; revisit.
+- Helper unification: `submitOneShot`/`imageBarrier` are shared (commands.hpp);
+  `clearAndReadback` (M2) still has its own inline submit/barriers — fold in if
+  touched (not urgent).
 
 ## Landmines & Context
 - ORIENT before writing (§3.0): this file → DEV_PROCESS → MILESTONES → ADR INDEX
   → DECISIONS. Restate governing ADRs before coding.
-- **`iv::vk::Volume` borrows the Context's device/queue/pool** and must not
-  outlive its Context (lifetime precondition; ADR-0009). Its `Unique<>` members
-  are ordered memory→image→view so the view/image are destroyed before the memory
-  is freed (load-bearing, like M2's `clearAndReadback` and `Context`).
-- **Precision is not bit-identical across float/double input** (D-0020): each path
-  is bit-exact to its *own* input-precision-then-narrow expectation; they can
-  differ by ≤1 ULP. Tests must compare a path to a same-precision expectation,
-  never float-path to double-path.
-- **The x-fastest layout is pinned by `static_assert`** in `iv/volume.hpp`; a
-  transposed `GridDims::index` is a compile error. Tight-packed `copyBufferToImage`
-  (`bufferRowLength = bufferImageHeight = 0`) relies on that layout.
-- **LSan is scoped off for Vulkan-inclusive test runs** (D-0015): loader +
-  validation layer leak unsymbolizable global state at exit. ASan/UBSan stay
-  active; `~[vk]` is leak-checked; the **validation layer** (incl. the pNext
-  teardown messenger) is the Vulkan-object-leak gate. Don't "fix" driver leaks.
-- **Context member order is load-bearing** (`context.hpp`): `validationCount_`
-  first (destroyed last — the pNext messenger writes it during
-  `vkDestroyInstance`); children after the instance.
-- M2/M3 use **classic 1.0 barriers** (D-0016), not sync2 — no device feature
-  enabled. Revisit at M4 if useful.
-- Vulkan boundary (ADR-0004): include only `iv/vk/vulkan.hpp`; never let
-  `vk::Result`/`VkResult` into consumer-facing signatures (§8.5); explicit casts
-  at the boundary, not blanket warning suppressions.
-- Rejection tests use a short-circuiting `rejected()` helper (`!has_value() &&
-  error().code == c`): calling `.error()` on a value-state `std::expected` is UB,
-  so guard with `has_value()` first (matters when fault-injecting validators).
+- **`glslc` is a required build tool** (ADR-0011/D-0022): configure fails without
+  it. Shaders live in `shaders/`; SPIR-V is embedded (regenerated each build). The
+  colormap LUT is committed data — regenerate with `tools/gen_colormap.py` (needs
+  matplotlib) if the map changes.
+- **Renderer/Volume borrow the Context** (device/queue/pool) and must not outlive
+  it. `Unique<>` member order is load-bearing (view/image before memory). Debug
+  thread-affinity checks guard accessors (ADR-0007).
+- **Coordinate convention (ADR-0012):** right-handed, **+Y up**, volume = `[0,1]³`,
+  **world position = texture coordinate**, image origin top-left. A wrong axis
+  order shows up in the render and ties back to the M3 x-fastest layout.
+- **`R32G32_SFLOAT` linear filtering isn't core-mandatory**; the renderer queries
+  it and falls back to nearest (`Renderer::volumeLinearFilter()`).
+- **Precision paths are not bit-identical** (D-0020): compare a path to a
+  same-precision expectation, never float-path to double-path.
+- **LSan scoped off for Vulkan-inclusive runs** (D-0015); the validation layer
+  (incl. the pNext teardown messenger) is the Vulkan-object-leak gate. Don't "fix"
+  driver leaks.
+- M2–M4 use **classic 1.0 barriers** (D-0016); no device feature enabled. Revisit
+  sync2 at M5 if the present path benefits.
+- Vulkan boundary (ADR-0004): include only `iv/vk/vulkan.hpp`; never leak
+  `vk::Result`/`VkResult` into consumer signatures (§8.5).
+- Rejection tests use the short-circuiting `rejected()` helper (`!has_value() &&
+  error().code == c`) — `.error()` on a value-state `std::expected` is UB.
 - Test commands: `cmake --build build/debug` then `./build/debug/tests/iv_tests`;
-  sanitizer gate `-DIV_SANITIZE=address,undefined` then `ctest --test-dir
-  build/asan`; TSan race-gate: build `-DIV_SANITIZE=thread`, run
-  `iv_tests "[concurrency]~[vk]"`. `IV_VULKAN_DEVICE_INDEX` forces a device.
-  Filter volume tests with `iv_tests "[volume]"`.
+  filter `"[renderer]"` / `"[volume]"`; sanitizer gate
+  `-DIV_SANITIZE=address,undefined` then `ctest --test-dir build/asan`; TSan gate
+  `-DIV_SANITIZE=thread`, run `iv_tests "[concurrency]~[vk]"`.
+  `IV_VULKAN_DEVICE_INDEX` forces a device.
 
 ## Pointers
 - Governing process: `DEV_PROCESS.md`.
-- Milestone arc & M4 scope: `MILESTONES.md` (§ M4).
-- Accepted contracts: `docs/adr/INDEX.md` (ADR-0001…0010).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0020), Backlog B-0001…B-0006.
-- M1/M2/M3 work + teeth: `CHANGELOG.md`.
+- Milestone arc & M5 scope: `MILESTONES.md` (§ M5).
+- Contracts: `docs/adr/INDEX.md` — ADR-0001…0014 Accepted.
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0023), Backlog B-0001…B-0007.
+- M1–M4 work + teeth: `CHANGELOG.md`.
 - Code: host model `include/iv/volume.hpp`, `src/volume.cpp`; Vulkan
-  `include/iv/vk/`, `src/vk/` (memory, context, offscreen, volume); tests
+  `include/iv/vk/`, `src/vk/` (commands, memory, shaders, context, offscreen,
+  volume, renderer); shaders `shaders/`; generated `colormap_lut.hpp`; tests
   `tests/test_volume.cpp`, `tests/test_vk_*.cpp`, `tests/test_concurrency.cpp`.

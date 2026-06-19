@@ -131,19 +131,25 @@ renderer headlessly via deterministic pixel readback before the window exists.
   Teeth demonstrated in `CHANGELOG.md` (§ M3), evidence 1–8.
 
 ## M4 — Ray-Marching Renderer & Transfer Function
-- **Status:** Planned
+- **Status:** Complete (2026-06-19) — locked (§2.5).
 - **Goal:** Offscreen direct volume rendering of the `(magnitude, phase)`
   texture: a camera with ray/box intersection, front-to-back alpha compositing,
   `abs`→opacity with a live linear/logarithmic toggle, and `arg`→cyclic
   colormap. Verified against analytically known cases via pixel readback.
 - **Done when:**
-  - [ ] Ray-march compositing shader renders the volume to an offscreen image.
-  - [ ] Camera + ray/box intersection produce a correct view of the unit volume.
-  - [ ] Linear and logarithmic opacity scaling both selectable and correct.
-  - [ ] Cyclic colormap maps `arg ∈ (-π, π]` to color per the colormap ADR.
-  - [ ] Known cases verified: single bright voxel of known phase → expected
-        color/opacity; uniform-phase field → expected hue; empty field →
-        background.
+  - [x] Ray-march compute shader renders the volume to an offscreen image
+        (`iv::vk::Renderer`, ADR-0011).
+  - [x] Camera + ray/box intersection produce a correct view of the unit volume
+        (silhouette: box-hitting pixels render; others read background).
+  - [x] Linear and logarithmic opacity scaling both selectable and correct
+        (including the degenerate-range and `log(0)` handling, ADR-0013).
+  - [x] Cyclic colormap maps `arg` to color per ADR-0014 (twilight LUT default +
+        selectable HSV), seam at ±π.
+  - [x] Known cases verified by pixel readback: empty field → background;
+        uniform-phase field → expected hue (HSV cyan at φ=0); and front-to-back
+        order, linear/log, and the colormap mapping each pinned by fault injection
+        (CHANGELOG § M4). (The original "single bright voxel" case was generalized
+        to the stronger analytic uniform-field cases.)
 - **Expected ADRs:**
   - Rendering technique & compositing model (DVR, sampling step, early-ray
     termination, front-to-back order).
@@ -156,7 +162,11 @@ renderer headlessly via deterministic pixel readback before the window exists.
   injection: flip compositing order (front-to-back ↔ back-to-front), perturb the
   colormap phase offset, or swap linear/log — each makes a known-case pixel
   diverge → red; restore → green.
-- **Actual ADRs:** _(filled at completion)_
+- **Actual ADRs:** ADR-0011 (rendering substrate & shader toolchain), ADR-0012
+  (camera, ray/box & compositing), ADR-0013 (opacity transfer function), ADR-0014
+  (cyclic phase colormap). Supporting decisions: D-0021 (compute substrate),
+  D-0022 (build-time glslc / embedded SPIR-V), D-0023 (coordinate frame & DVR
+  convention). Teeth demonstrated in `CHANGELOG.md` (§ M4), evidence 1–4.
 
 ## M5 — Interactive Viewer & Performance Contract
 - **Status:** Planned

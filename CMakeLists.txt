@@ -62,7 +62,9 @@ add_library(iv
     src/vk/memory.cpp
     src/vk/context.cpp
     src/vk/offscreen.cpp
-    src/vk/volume.cpp)
+    src/vk/volume.cpp
+    src/vk/shaders.cpp
+    src/vk/renderer.cpp)
 add_library(iv::iv ALIAS iv)
 target_include_directories(iv PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
@@ -70,6 +72,41 @@ target_include_directories(iv PUBLIC
 # iv/vk/vulkan.hpp, so consumers need its include path and the loader.
 target_link_libraries(iv PUBLIC Vulkan::Vulkan)
 target_link_libraries(iv PRIVATE iv_warnings)
+
+# --- Shaders: glslc -> SPIR-V -> embedded byte array (ADR-0011, D-0022) ---
+# glslc (Vulkan SDK) is a REQUIRED build tool; this extends ADR-0001's dependency
+# policy. It is a build tool, not a linked/runtime dependency.
+find_program(IV_GLSLC glslc)
+if(NOT IV_GLSLC)
+    message(FATAL_ERROR
+        "ADR-0011: glslc (from the Vulkan SDK) is required to compile shaders but "
+        "was not found on PATH. Install the Vulkan SDK or add glslc to PATH.")
+endif()
+message(STATUS "Shader compiler (glslc): ${IV_GLSLC}")
+
+set(IV_EMBED_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_spirv.cmake)
+
+# Compile a GLSL shader to SPIR-V and embed it as a generated .cpp linked into iv.
+function(iv_embed_shader SRC SYMBOL)
+    set(spv ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOL}.spv)
+    set(gen ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOL}.spv.cpp)
+    add_custom_command(
+        OUTPUT ${spv}
+        COMMAND ${IV_GLSLC} -O --target-env=vulkan1.3 -o ${spv} ${SRC}
+        DEPENDS ${SRC}
+        COMMENT "glslc ${SYMBOL}"
+        VERBATIM)
+    add_custom_command(
+        OUTPUT ${gen}
+        COMMAND ${CMAKE_COMMAND} -DSPV=${spv} -DSYMBOL=${SYMBOL} -DOUT=${gen}
+                -P ${IV_EMBED_SCRIPT}
+        DEPENDS ${spv} ${IV_EMBED_SCRIPT}
+        COMMENT "embed ${SYMBOL}"
+        VERBATIM)
+    target_sources(iv PRIVATE ${gen})
+endfunction()
+
+iv_embed_shader(${CMAKE_CURRENT_SOURCE_DIR}/shaders/ray_march.comp ray_march_comp)
 
 # --- Tests ---
 include(CTest)

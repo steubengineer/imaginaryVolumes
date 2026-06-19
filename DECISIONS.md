@@ -10,6 +10,54 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0023 — M4 coordinate frame & DVR convention (RH, +Y up, unit-cube = texcoord)
+- **Date / milestone:** 2026-06-19 / M4 (CONTRACT)
+- **Choice:** The §5 conventions for the renderer: handedness/up-axis, where the
+  volume lives, how rays are generated, and the compositing/march model.
+- **Decision:** Right-handed world, **+Y up**; the volume is the unit cube
+  `[0,1]³` and a world position **is** the normalized 3D texture coordinate;
+  rendered image origin **top-left** (matches ADR-0006). Fixed pinhole camera
+  (eye/target/up/vfov/aspect) passed as `eye + topLeftDir + horizontal + vertical`
+  spanning vectors; **front-to-back `over`** compositing with a **fixed
+  `stepCount`** (no opacity correction in M4) and early-ray termination.
+- **Rationale:** World = texcoord makes sampling trivial and ties rendering to the
+  M3 x-fastest layout (a wrong axis is visible); fixed steps are deterministic and
+  exactly testable; front-to-back enables early-out (a perf lever for M5).
+- **Contract impact:** ADR-0012 (Proposed). Realizes D-0008.
+- **Deferred alternatives:** model matrix / non-unit volume, opacity (step-size)
+  correction, adaptive/jittered sampling — all deferred (would refine ADR-0012).
+
+### D-0022 — Shader toolchain: build-time glslc → embedded SPIR-V (extends ADR-0001)
+- **Date / milestone:** 2026-06-19 / M4 (CONTRACT) — maintainer decision
+- **Choice:** How GLSL becomes the SPIR-V the library uses: build-time `glslc`
+  (embedded) vs vendored precompiled `.spv` vs runtime `libshaderc`.
+- **Decision:** Compile `shaders/*.{comp,vert,frag}` with `glslc` (found via CMake
+  `find_program`; **fatal at configure if missing**, like the GCC≥13 check) and
+  **embed** the SPIR-V into `libiv` as a generated array. This **extends
+  ADR-0001's dependency policy**: `glslc` (Vulkan SDK) is a required **build
+  tool** — not a linked/runtime dependency; no build-time network. ADR-0001 is
+  **not** superseded.
+- **Rationale:** Shaders always match source; the library stays self-contained and
+  tests are path-independent; the SDK is installed. Reproducible/offline.
+- **Contract impact:** ADR-0011 (Proposed); amends ADR-0001 §dependency policy
+  (journaled here, not a supersession).
+- **Deferred alternatives:** vendored precompiled SPIR-V (the fallback if requiring
+  `glslc` at build becomes painful) — would be a superseding build ADR.
+
+### D-0021 — M4 rendering substrate: compute shader → R8G8B8A8 storage image
+- **Date / milestone:** 2026-06-19 / M4 (CONTRACT) — maintainer decision
+- **Choice:** Compute pipeline (storage image) vs graphics pipeline (fragment
+  shader into the M2 color attachment) for the ray-marcher.
+- **Decision:** A **compute** pipeline casts one ray per pixel and `imageStore`s to
+  a dedicated 2D **`R8G8B8A8_UNORM` storage image** (a storage-mandatory format),
+  read back via the ADR-0006 staging path. No render pass / framebuffer / vertex
+  stage; no new device feature (D-0016 retained).
+- **Rationale:** Compute is the natural fit for per-pixel ray casting, avoids
+  render-pass boilerplate and the dynamic-rendering choice, and blits cleanly to
+  M5's swapchain; a dedicated storage image leaves M2's target untouched.
+- **Contract impact:** ADR-0011 (Proposed). Realizes D-0008.
+- **Deferred alternatives:** graphics-pipeline DVR (rejected; more boilerplate).
+
 ### D-0020 — Precision paths are not bit-identical; each is bit-exact to its own precision
 - **Date / milestone:** 2026-06-19 / M3 (IMPLEMENT/VERIFY)
 - **Choice / finding:** ADR-0009's *Verification* narrative claimed the `float`
@@ -346,3 +394,14 @@ the same day. Future entries prepend above.)
 - **Revisit when:** M3 — allocations proliferate (3D textures, staging, buffers).
 - **Contract link:** a new dependency ADR (§1.1) + would amend ADR-0006's memory
   section.
+
+### B-0007 — Volume bounding box with axis ticks/labels
+- **Origin:** ADR-0012 review (maintainer, 2026-06-19).
+- **What:** Optionally draw the volume's `[0,1]³` bounding box with axis
+  ticks/labels for spatial reference in the rendered image.
+- **Why deferred:** M4 renders the field itself; annotations/overlays are a
+  separable presentation feature.
+- **Revisit when:** A milestone adds scene annotation / overlays (likely with or
+  after M5's viewer).
+- **Contract link:** would extend the M4 rendering ADRs (camera/compositing,
+  ADR-0012) and/or a future overlay ADR.

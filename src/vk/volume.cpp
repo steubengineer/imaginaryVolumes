@@ -1,11 +1,11 @@
 #include "iv/vk/volume.hpp"
 
 #include "iv/assert.hpp"
+#include "iv/vk/commands.hpp"
 #include "iv/vk/memory.hpp"
 #include "iv/vk/result.hpp"
 
 #include <cstring>
-#include <limits>
 
 namespace iv::vk {
 
@@ -15,76 +15,6 @@ namespace {
 
 constexpr vkh::Format kVolumeFormat = vkh::Format::eR32G32Sfloat;
 constexpr std::size_t kChannels = 2; // (magnitude, phase)
-
-// Allocate a primary command buffer, record via `record`, submit to `queue`, and
-// wait on a fence before returning (host reads happen only after the fence;
-// ADR-0007). One-shot; the command buffer is freed on return. Classic core-1.0
-// barriers are recorded by callers (D-0016).
-template <class Record>
-Status submitOneShot(vkh::Device device, vkh::Queue queue, vkh::CommandPool pool, Record&& record) {
-    Unique<vkh::CommandBuffer> cmd;
-    {
-        auto r = take(device.allocateCommandBuffers(vkh::CommandBufferAllocateInfo{}
-                                                        .setCommandPool(pool)
-                                                        .setLevel(vkh::CommandBufferLevel::ePrimary)
-                                                        .setCommandBufferCount(1u)),
-                      "allocateCommandBuffers");
-        if (!r) {
-            return std::unexpected(std::move(r).error());
-        }
-        const vkh::CommandBuffer handle = (*r).front();
-        cmd = Unique<vkh::CommandBuffer>(
-            handle, [device, pool](vkh::CommandBuffer c) { device.freeCommandBuffers(pool, c); });
-    }
-
-    if (auto s = check(cmd.get().begin(vkh::CommandBufferBeginInfo{}.setFlags(
-                           vkh::CommandBufferUsageFlagBits::eOneTimeSubmit)),
-                       "beginCommandBuffer");
-        !s) {
-        return std::unexpected(std::move(s).error());
-    }
-    record(cmd.get());
-    if (auto s = check(cmd.get().end(), "endCommandBuffer"); !s) {
-        return std::unexpected(std::move(s).error());
-    }
-
-    Unique<vkh::Fence> fence;
-    {
-        auto r = take(device.createFence(vkh::FenceCreateInfo{}), "createFence");
-        if (!r) {
-            return std::unexpected(std::move(r).error());
-        }
-        fence = Unique<vkh::Fence>(*r, [device](vkh::Fence f) { device.destroyFence(f); });
-    }
-    const vkh::CommandBuffer submitCmd = cmd.get();
-    if (auto s = check(queue.submit(vkh::SubmitInfo{}.setCommandBuffers(submitCmd), fence.get()),
-                       "queueSubmit");
-        !s) {
-        return std::unexpected(std::move(s).error());
-    }
-    if (auto s = check(device.waitForFences(fence.get(), VK_TRUE,
-                                            std::numeric_limits<std::uint64_t>::max()),
-                       "waitForFences");
-        !s) {
-        return std::unexpected(std::move(s).error());
-    }
-    return {};
-}
-
-vkh::ImageMemoryBarrier layoutBarrier(vkh::Image image, vkh::ImageLayout oldLayout,
-                                      vkh::ImageLayout newLayout, vkh::AccessFlags srcAccess,
-                                      vkh::AccessFlags dstAccess) {
-    const vkh::ImageSubresourceRange range{vkh::ImageAspectFlagBits::eColor, 0u, 1u, 0u, 1u};
-    return vkh::ImageMemoryBarrier{}
-        .setOldLayout(oldLayout)
-        .setNewLayout(newLayout)
-        .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-        .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-        .setImage(image)
-        .setSubresourceRange(range)
-        .setSrcAccessMask(srcAccess)
-        .setDstAccessMask(dstAccess);
-}
 
 // One region covering the whole 3D image, tightly packed in the buffer
 // (bufferRowLength = bufferImageHeight = 0). Tight packing matches the x-fastest
@@ -229,7 +159,7 @@ Result<Volume> Volume::createImpl(const Context& ctx, std::span<const std::compl
                 cmd.pipelineBarrier(
                     vkh::PipelineStageFlagBits::eTopOfPipe, vkh::PipelineStageFlagBits::eTransfer,
                     vkh::DependencyFlags{}, nullptr, nullptr,
-                    layoutBarrier(img, vkh::ImageLayout::eUndefined,
+                    imageBarrier(img, vkh::ImageLayout::eUndefined,
                                   vkh::ImageLayout::eTransferDstOptimal,
                                   vkh::AccessFlagBits::eNone, vkh::AccessFlagBits::eTransferWrite));
                 cmd.copyBufferToImage(buf, img, vkh::ImageLayout::eTransferDstOptimal, region);
@@ -237,7 +167,7 @@ Result<Volume> Volume::createImpl(const Context& ctx, std::span<const std::compl
                     vkh::PipelineStageFlagBits::eTransfer,
                     vkh::PipelineStageFlagBits::eFragmentShader, vkh::DependencyFlags{}, nullptr,
                     nullptr,
-                    layoutBarrier(img, vkh::ImageLayout::eTransferDstOptimal,
+                    imageBarrier(img, vkh::ImageLayout::eTransferDstOptimal,
                                   vkh::ImageLayout::eShaderReadOnlyOptimal,
                                   vkh::AccessFlagBits::eTransferWrite,
                                   vkh::AccessFlagBits::eShaderRead));
@@ -327,7 +257,7 @@ Result<VolumeReadback> Volume::readback() const {
                 cmd.pipelineBarrier(
                     vkh::PipelineStageFlagBits::eFragmentShader,
                     vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr, nullptr,
-                    layoutBarrier(img, vkh::ImageLayout::eShaderReadOnlyOptimal,
+                    imageBarrier(img, vkh::ImageLayout::eShaderReadOnlyOptimal,
                                   vkh::ImageLayout::eTransferSrcOptimal,
                                   vkh::AccessFlagBits::eShaderRead,
                                   vkh::AccessFlagBits::eTransferRead));
@@ -336,7 +266,7 @@ Result<VolumeReadback> Volume::readback() const {
                     vkh::PipelineStageFlagBits::eTransfer,
                     vkh::PipelineStageFlagBits::eFragmentShader, vkh::DependencyFlags{}, nullptr,
                     nullptr,
-                    layoutBarrier(img, vkh::ImageLayout::eTransferSrcOptimal,
+                    imageBarrier(img, vkh::ImageLayout::eTransferSrcOptimal,
                                   vkh::ImageLayout::eShaderReadOnlyOptimal,
                                   vkh::AccessFlagBits::eTransferRead,
                                   vkh::AccessFlagBits::eShaderRead));

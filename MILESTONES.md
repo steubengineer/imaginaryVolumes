@@ -27,6 +27,9 @@ renderer headlessly via deterministic pixel readback before the window exists.
 3. **M3** — Volume data model & GPU upload (`complex` → `(magnitude, phase)` texture).
 4. **M4** — Ray-marching renderer & transfer function (abs→opacity, arg→colormap).
 5. **M5** — Interactive viewer (swapchain/GLFW) & performance contract.
+6. **M6** — Text & annotation foundation (overlay pass, opacity correction, HarfBuzz
+   shaping + libharfbuzz-gpu/Slug glyph rendering).
+7. **M7** — Quantitative plot annotations (bounding box, ticked axes, legend, labels).
 
 ---
 
@@ -196,7 +199,7 @@ renderer headlessly via deterministic pixel readback before the window exists.
 - **Note:** completed exactly as scoped (4 ADRs, ≤ ~5 per §2.2; no split).
 
 ## M6 — Text & Annotation Foundation
-- **Status:** Planned (CONTRACT in progress, 2026-06-19).
+- **Status:** Complete (2026-06-19) — locked (§2.5).
 - **Goal:** The rendering foundation for *publication-quality, quantitatively
   legible* plots: (a) a 2D screen-space **overlay** pass (the project's first
   graphics pipeline) composited over the compute-rendered volume, working
@@ -208,15 +211,17 @@ renderer headlessly via deterministic pixel readback before the window exists.
   text/Unicode. (First half of the "usable scientific plotting library" goal; split
   from M7 per §2.2.)
 - **Done when:**
-  - [ ] Opacity is corrected for ray step spacing: the rendered density of a fixed
+  - [x] Opacity is corrected for ray step spacing: the rendered density of a fixed
         field is invariant to `stepCount` (within tolerance) (B-0008; extends
-        ADR-0013).
-  - [ ] A 2D overlay (lines + textured quads) composites over the volume render in
-        both `Renderer::render()` (headless) and the `Viewer`.
-  - [ ] HarfBuzz (vendored, pinned) shapes a Unicode string to positioned glyphs;
-        `libharfbuzz-gpu` (Slug) renders them resolution-independently on the GPU.
-  - [ ] A demo/headless image shows a crisp Unicode text string + a line/box drawn
-        over the volume, legible across a zoom range.
+        ADR-0013). — ADR-0020.
+  - [x] A 2D overlay (lines + triangles) composites over the volume render in both
+        `Renderer::render()` (headless) and the `Viewer`. — ADR-0021.
+  - [x] HarfBuzz (vendored, pinned) shapes a Unicode string to positioned glyphs;
+        `libharfbuzz-gpu` (Slug) renders them resolution-independently on the GPU. —
+        ADR-0022/0023.
+  - [x] A headless render shows crisp Unicode text composited over the volume,
+        legible across a zoom range (coverage + ~size² scaling tests). — ADR-0023.
+        (On-screen text in the *viewer* is deferred to M7: B-0010.)
 - **Expected ADRs:**
   - Opacity correction (`dt`-correct transfer function; extends ADR-0013).
   - 2D annotation/overlay substrate (first graphics pipeline; compositing over the
@@ -230,7 +235,13 @@ renderer headlessly via deterministic pixel readback before the window exists.
   validation-clean (teeth: a deliberately wrong layout/barrier → validation error);
   a known-string glyph-coverage/render test (teeth: perturb shaping positions or the
   Slug encode → the rendered text pixels diverge from the reference → red).
-- **Actual ADRs:** _(filled at completion)_
+- **Actual ADRs:** ADR-0020 (opacity correction; extends ADR-0013) · ADR-0021 (2D
+  overlay substrate / first graphics pipeline) · ADR-0022 (vendored HarfBuzz +
+  Unicode shaping; default font New Computer Modern, GFL faces) · ADR-0023
+  (libharfbuzz-gpu / Slug GPU glyph rendering). Decisions D-0031…D-0036; Backlog
+  B-0008 (resolved by ADR-0020), B-0009, B-0010. Commits: 53d7c84 (contract +
+  ADR-0020), c951229 (ADR-0021), 557000b (ADR-0022), ee235a4 (ADR-0023). Scope note:
+  Slug glyphs render on the headless path; viewer text is M7 (D-0036, B-0010).
 
 ## M7 — Quantitative Plot Annotations
 - **Status:** Planned.

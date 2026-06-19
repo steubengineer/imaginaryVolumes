@@ -1,98 +1,53 @@
 # HANDOFF.md — imaginaryVolumes
 
 **Last updated:** 2026-06-19 by the M6 session (Claude / Opus 4.8)
-**Active milestone:** **M6 — Text & Annotation Foundation** (IMPLEMENT in progress;
-contract Accepted). M1–M5 complete & locked.
+**Active milestone:** **M6 Complete & locked.** Next: **M7 — Quantitative Plot
+Annotations** (not started; begin at ORIENT → CONTRACT). M1–M6 complete & locked.
 
 ## Current State
 **M1–M5 Complete and locked** (MILESTONES.md; CHANGELOG.md): ingest a complex field →
 3D RG32F texture → compute ray-march → offscreen readback **and** interactive GLFW
 viewer, with a perf benchmark (15.3 ms / ~65 FPS @ 512³→720p on the RTX 4070).
 
-**M6 is the text & annotation foundation** for publication-quality, quantitatively
-legible plots; split from M7 (annotations: box/axes/legend/units/API). **LaTeX is
-deferred** to a later milestone — M6 labels are text/Unicode.
+**M6 (text & annotation foundation) is Complete & locked** (MILESTONES.md;
+CHANGELOG.md § M6). Four ADRs, four commits, all gates green:
+- **ADR-0020** (53d7c84) — opacity correction in `ray_march.comp`
+  (`α = 1 − (1−a)^(dt·kReferenceSteps)`, `kReferenceSteps = 256`): density invariant
+  to `stepCount` (resolves B-0008).
+- **ADR-0021** (c951229) — 2D overlay substrate, the project's **first graphics
+  pipeline**: a classic render pass (`loadOp = eLoad`, alpha blend) draws line/triangle
+  geometry over the compute image, identical headless + windowed. `iv::vk::Overlay`,
+  `Viewer::overlay()`, `overlay.vert/.frag`.
+- **ADR-0022** (557000b) — vendored **HarfBuzz** (`main` @ `ac0979b`, minimal
+  `harfbuzz_core`) behind `iv::text::Shaper`; **New Computer Modern** GFL face
+  embedded (`bundledFont()`); `iv_text` + `IV_BUILD_TEXT` gate. Pin/licensing in
+  `third_party/{harfbuzz/VENDORING.md,fonts/README.md}`.
+- **ADR-0023** (ee235a4) — **Slug** GPU glyph rendering via `harfbuzz_gpu`:
+  `Shaper::encodeGlyph()`/`glyphAtlas()` (RGBA16I), a third overlay pipeline sampling
+  an R16G16B16A16_SINT texel buffer, `shaders/glyph.{vert,frag}` (`#include`-ing the
+  vendored Slug GLSL), `iv::text::appendText()`. **Headless `render()` path only**;
+  viewer text is M7 (D-0036, B-0010).
 
-- **M6 CONTRACT Accepted** — ADR-0020 (opacity correction) · ADR-0021 (2D overlay
-  substrate = first graphics pipeline) · ADR-0022 (vendor HarfBuzz + Unicode shaping;
-  default font **New Computer Modern**, **GFL faces only**) · ADR-0023
-  (libharfbuzz-gpu / **Slug** GPU glyph rendering). D-0031…D-0034; B-0008 scheduled,
-  B-0009 logged. Index current.
-- **✅ ADR-0020 DONE & committed (53d7c84):** `shaders/ray_march.comp` corrects
-  per-sample opacity for step spacing — `α = 1 − (1−a)^(dt·kReferenceSteps)`,
-  `kReferenceSteps = 256` (a file-scope shader const). Density is now invariant to
-  `stepCount` and scales with path length (B-0008). Invariance test +
-  demonstrated teeth in `tests/test_vk_renderer.cpp` ("opacity is invariant to
-  stepCount").
-- **✅ ADR-0021 DONE & committed (c951229):** 2D overlay substrate (first graphics
-  pipeline) — see In Flight below.
-- **✅ ADR-0022 DONE (this session's 3rd M6 commit):** vendored HarfBuzz +
-  `iv::text::Shaper` + bundled GFL font. HarfBuzz `main` @ `ac0979b` mirrored into
-  `third_party/harfbuzz/` (D-0035), built minimal (`harfbuzz_core`, amalgamated
-  `src/harfbuzz.cc`, no ICU/GLib/Cairo/FreeType, SYSTEM, not `-Werror`), gated by
-  `IV_BUILD_TEXT` (default ON; OFF = text-free isolation gate). `iv::text::Shaper`
-  (UTF-8+size → positioned glyphs; **no HB type in any public header** — verified)
-  wraps it; `NewCM10-Book.otf` (NCM 8.1.0, GFL) embedded via `tools/embed_bytes.cmake`
-  → `iv::text::bundledFont()`. Tests `tests/test_text_shaper.cpp` ("[text]", 6 cases)
-  + demonstrated teeth (disable `liga` → "ffi" stays 3 glyphs → red). Full suite
-  **296/46**; ASan+UBSan green; text-free build green.
+Decisions D-0031…D-0036; Backlog B-0008 (resolved), B-0009, B-0010. ADR index current.
+Gates at close: full suite **341/49**; ASan+UBSan `ctest` green; text-free
+(`IV_BUILD_TEXT=OFF`) + GLFW-free builds green; no HarfBuzz type in any public header;
+`iv_view --frames` validation-clean.
 
-## In Flight (work started, not finished) — M6 IMPLEMENT
-ADR-0020, ADR-0021, and ADR-0022 are done. **One ADR remains** (0023; it needs both
-0021's overlay and 0022's shaping):
-- **✅ ADR-0021 — 2D overlay substrate (DONE, in this session's 2nd M6 commit).**
-  First graphics pipeline: render target has `eColorAttachment`; a classic render
-  pass (`loadOp = eLoad`, alpha blend) draws line/triangle geometry over the volume
-  image in both `render()` (→ readback) and `recordFrame()` (→ blit). Public
-  `iv::vk::Overlay {lines, triangles, transform}`; `render()`/`recordFrame()` take an
-  optional overlay; `Viewer::overlay()` drives it. Shaders `overlay.vert/.frag`.
-  Headless composite test + teeth (disable blend → red); `iv_view --frames` overlay
-  validation-clean. **For glyphs (ADR-0023), emit quads into `Overlay::triangles`;
-  the camera→clip `transform` (world-space box/axes) is M7's to fill.**
-- **✅ ADR-0022 — vendor HarfBuzz + shaping (DONE, this session's 3rd M6 commit).**
-  HarfBuzz `main` @ `ac0979b` mirrored into `third_party/harfbuzz/src/` (incl. the
-  `hb-gpu*.cc` sources + `.glsl` shaders for ADR-0023); `harfbuzz_core` static lib
-  from the amalgamated `src/harfbuzz.cc`, no ICU/GLib/Cairo/FreeType, SYSTEM, not
-  `-Werror`. `iv::text::Shaper` (`include/iv/text/shaper.hpp`, `src/text/shaper.cpp`)
-  hides HarfBuzz (ADR-0004); `NewCM10-Book.otf` (NCM 8.1.0, GFL) embedded via
-  `tools/embed_bytes.cmake` → `iv::text::bundledFont()`. `iv_text` target + tests
-  gated by `IV_BUILD_TEXT`. Pin/licensing in `third_party/harfbuzz/VENDORING.md` +
-  `third_party/fonts/README.md` (D-0035). **For ADR-0023, the GPU sources are already
-  vendored** — wire `hb-gpu*.cc` into the build and compile the `.glsl`.
-- **ADR-0023 — Slug glyph rendering.** Encode glyph outlines with `libharfbuzz-gpu`
-  (cached per `(font, glyphId)`); draw quads in the ADR-0021 overlay with its **GLSL**
-  Slug shaders compiled through our `glslc`→SPIR-V→embed toolchain (ADR-0011/D-0022).
-  Documented fallback: self-baked MSDF if the experimental API is unworkable.
+## In Flight (work started, not finished)
+**Nothing in flight.** M6 is closed; M7 has not started. Working tree is clean at
+`ee235a4` (ADR-0023) + the M6 RECORD commit.
 
-## Next Action
-**M6 RECORD (then milestone close).** All four M6 ADRs are implemented & committed
-(ADR-0023 = Slug GPU glyph rendering, headless path; D-0036, B-0010). Remaining:
-write the CHANGELOG § M6 (teeth: opacity invariance, overlay blend, ligature shaping,
-glyph coverage), flip MILESTONES M6 → Complete & locked, finish the HANDOFF rewrite,
-final M6 commit. Historical next-action notes for ADR-0023 follow.
-
-<details><summary>ADR-0023 implementation notes (done)</summary>
-
-**Implemented (Slug GPU glyph rendering)** — the last M6 ADR. The GPU sources
-are already vendored (D-0035): add `harfbuzz_gpu` to `third_party/harfbuzz/CMakeLists.txt`
-(`hb-gpu.cc`, `hb-gpu-draw.cc`, `hb-gpu-paint.cc`; links `harfbuzz_core` + `m`),
-extend `iv_text` to use it. Per `hb-gpu.h`: `hb_gpu_draw_create_or_fail()` →
-`hb_gpu_draw_get_funcs()` fed to `hb_font_draw_glyph(font, gid, funcs, draw)` →
-`hb_gpu_draw_encode()` returns the encoded outline blob (cache per `(font,glyphId)`,
-ADR-0014 style); `hb_gpu_shader_source(stage, HB_GPU_SHADER_LANG_GLSL)` yields the
-GLSL (the `.glsl` files are vendored — compile via our `glslc`→SPIR-V→embed
-toolchain, ADR-0011). Draw one quad per shaped glyph into `Overlay::triangles`
-(ADR-0021), alpha-blended. Verify: glyph coverage at sampled pixels vs a recorded
-reference + zoom-invariance (two scales); teeth = skip the encode / wrong shader →
-blank/wrong → red. **MSDF is the documented fallback** if the experimental API is
-unworkable at the pin.
-
-Then **M6 RECORD**: write the CHANGELOG § M6 (all teeth: opacity invariance,
-overlay blend, ligature shaping, glyph coverage), MILESTONES M6 → Complete & locked,
-update HANDOFF, final M6 commit. Commit at verified checkpoints (so far: 53d7c84 =
-contract + ADR-0020; c951229 = ADR-0021; 3rd M6 commit = ADR-0022).
-
-</details>
+## Next Action (begin M7)
+**Start M7 — Quantitative Plot Annotations** at ORIENT → CONTRACT (DEV_PROCESS §3.0,
+§2). M7 turns the M6 foundation into a labeled, publication-quality plot. Per
+MILESTONES.md M7 + B-0007: a world-space **bounding box** + **ticked axes** (using the
+ADR-0012 camera→clip transform — `Overlay::transform` is ready for this), a
+**legend/colorbar** for the magnitude transfer function + phase colormap,
+**coordinate ranges/units**, and a **public label API**. First M7 deliverable that
+unblocks the rest: **present-path (viewer) Slug glyph rendering (B-0010)** so labels
+show interactively — persist the glyph vertex/atlas/descriptor across the in-flight
+frame (like `frameOverlayBuf_`), reusing `buildGlyphResources`. Write the M7 ADRs
+(Proposed → Accepted gate) before implementing. LaTeX math is still deferred.
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.
@@ -127,6 +82,19 @@ contract + ADR-0020; c951229 = ADR-0021; 3rd M6 commit = ADR-0022).
   may appear in any `include/` header** (ADR-0004 — there's a grep-able gate). The
   bundled face is embedded (no runtime file); positions are 26.6 fixed point →
   divide by 64 for pixels (already done in `Shaper::shape`).
+- **Slug glyph rendering (ADR-0023, D-0036) gotchas:** the atlas is **RGBA16I**
+  (4×int16/texel, uploaded as `R16G16B16A16_SINT`), *not* int32 — this is why blobs
+  are 8-byte- not 16-byte-aligned, and the source of the ±8000-unit coordinate range.
+  Glyph outlines are encoded in **font units** (a separate upem-scaled `hb_font`), so
+  `EncodedGlyph::extents` are font units (e.g. 'H' ≈ 33,0..716,683 at upem 1000); the
+  layout scales by `pixelSize/upem`. The vendored Slug GLSL is OpenGL-style; it only
+  compiles for Vulkan because `shaders/glyph.frag` is built with
+  `-fauto-bind-uniforms -fauto-map-locations` (the atlas `isamplerBuffer` → **set 0 /
+  binding 0** — the glyph descriptor layout must match). Glyph quads are baked to
+  **clip space (NDC) on the CPU** (no `hb_gpu_dilate`). Glyphs render on the
+  **headless `render()` path only**; the present path passes `nullptr` glyphs
+  (B-0010). The glyph pipeline is in core `iv` (no HarfBuzz link), so it builds with
+  `IV_BUILD_TEXT=OFF` — don't make it depend on `iv_text`.
 - **Viewer lifetime is pimpl-ordered** (`src/vk/viewer.cpp` `Viewer::Impl`): member
   declaration order is load-bearing (GLFW lib guard first → destroyed last; window
   after the Context; all device children before the Context). `~Impl` waits the
@@ -180,12 +148,11 @@ contract + ADR-0020; c951229 = ADR-0021; 3rd M6 commit = ADR-0022).
 
 ## Pointers
 - Governing process: `DEV_PROCESS.md`.
-- Milestone arc: `MILESTONES.md` (M1–M5 complete & locked; M6 IMPLEMENT, 3/4 ADRs done).
+- Milestone arc: `MILESTONES.md` (M1–M6 complete & locked; M7 next).
 - Contracts: `docs/adr/INDEX.md` — ADR-0001…0023 Accepted (ADR-0009 superseded by
   ADR-0015).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0035), Backlog B-0001…B-0009.
-- M1–M5 work + teeth: `CHANGELOG.md` (M6 section written at M6 RECORD; per-ADR teeth
-  are in the commit messages until then).
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0036), Backlog B-0001…B-0010.
+- M1–M6 work + teeth: `CHANGELOG.md`.
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs via the owned
   `examples/png.hpp`, D-0024; gitignored `gallery/`); `iv_view` (interactive
   viewer); `iv_bench` (perf).

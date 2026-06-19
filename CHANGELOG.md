@@ -4,6 +4,61 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## M6 — Text & Annotation Foundation
+
+**Status:** Complete (2026-06-19).
+**Governing ADRs:** ADR-0020 (opacity correction; extends ADR-0013), ADR-0021 (2D
+overlay substrate — the project's first graphics pipeline), ADR-0022 (vendored
+HarfBuzz + Unicode shaping; default font New Computer Modern, GFL faces), ADR-0023
+(libharfbuzz-gpu / Slug GPU glyph rendering). Decisions D-0031…D-0036; Backlog B-0008
+(resolved by ADR-0020), B-0009, B-0010.
+
+### Added
+- **Opacity correction** (ADR-0020): `shaders/ray_march.comp` corrects per-sample
+  opacity for step spacing — `α = 1 − (1−a)^(dt·kReferenceSteps)`, `kReferenceSteps
+  = 256` — so displayed density is invariant to `stepCount` and scales with path
+  length (B-0008).
+- **2D overlay substrate** (ADR-0021): the volume render target gains
+  `eColorAttachment`; after the compute pass a classic `VkRenderPass` (`loadOp =
+  eLoad`, alpha blend) draws colored line-list + triangle-list geometry into the same
+  image, identical headless (`render()` → readback) and windowed (`recordFrame` →
+  blit). Public `iv::vk::Overlay {lines, triangles, transform}`; `Viewer::overlay()`;
+  shaders `overlay.vert/.frag` (`include/iv/vk/renderer.hpp`, `src/vk/renderer.cpp`,
+  `src/vk/viewer.cpp`).
+- **Vendored HarfBuzz + shaping** (ADR-0022): HarfBuzz vendored at a pinned `main`
+  commit (`third_party/harfbuzz/`, D-0035), built minimal as `harfbuzz_core` (one
+  amalgamated TU, no ICU/GLib/Cairo/FreeType). `iv::text::Shaper` (UTF-8 + font +
+  size → positioned glyphs) hides HarfBuzz (ADR-0004). Default face
+  `NewCM10-Book.otf` (New Computer Modern 8.1.0, GFL) embedded via
+  `tools/embed_bytes.cmake` → `iv::text::bundledFont()`. New `iv_text` target +
+  `IV_BUILD_TEXT` gate (`include/iv/text/`, `src/text/`).
+- **Slug GPU glyph rendering** (ADR-0023): `harfbuzz_gpu` lib (the experimental
+  libharfbuzz-gpu). `Shaper::encodeGlyph()`/`glyphAtlas()` pack glyph outlines into a
+  per-Shaper RGBA16I atlas; the renderer’s third overlay pipeline samples it as an
+  R16G16B16A16_SINT uniform texel buffer and rasterizes analytic Slug coverage
+  (`shaders/glyph.vert/.frag`, the fragment `#include`-ing the vendored Slug GLSL via
+  `glslc -fauto-bind-uniforms`). `iv::text::appendText()` lays a string into NDC
+  glyph quads + the atlas; `Overlay` gains `{glyphs, glyphAtlas}`. Headless
+  `render()` path (viewer text deferred to M7, B-0010; D-0036).
+
+### Verification (teeth)
+- **Opacity invariance** (ADR-0020): a uniform field rendered at `stepCount` 32 vs
+  256 matches with the correction; **teeth** — removing the dt-correction makes the
+  two diverge (channels by ~150) → the invariance test goes red.
+- **Overlay composite** (ADR-0021): a half-screen 50%-alpha red quad over a blue
+  volume blends to ~(128,0,128); **teeth** — disabling the pipeline’s alpha blend
+  writes pure red → red.
+- **Shaping** (ADR-0022): the serif face ligates `ffi` to one glyph; **teeth** —
+  disabling the `liga` feature leaves three glyphs (`ffi.size() < 3` fails, 3 < 3),
+  proving a real shaper, not a 1:1 map.
+- **Glyph rendering** (ADR-0023): a headless white `H` paints in-range ink with
+  mid-row stem/crossbar crossings, an outside point stays background, and ink area
+  scales ~4× from 48→96 px (resolution independence); **teeth** — skipping the glyph
+  draw makes ink == 0 → the coverage and scaling checks go red.
+- Full suite **341 assertions / 49 cases**; ASan+UBSan `ctest` green (both entries);
+  `IV_BUILD_TEXT=OFF` (text-free) and `IV_BUILD_VIEWER=OFF` (GLFW-free) builds green;
+  no HarfBuzz type in any public header; `iv_view --frames` validation-clean.
+
 ## M5 — Interactive Viewer & Performance Contract
 
 **Status:** Complete (2026-06-19).

@@ -76,6 +76,7 @@ struct Viewer::Impl {
     OrbitCamera camera;
     RenderParams params;
     Overlay overlay; // drawn over the volume each frame (ADR-0021)
+    Viewer::FrameCallback onFrame; // rebuilds the overlay each frame (ADR-0026)
     bool lmbDown{false};
     double lastX{0.0};
     double lastY{0.0};
@@ -306,6 +307,11 @@ Status Viewer::Impl::drawFrame() {
         !s) {
         return std::unexpected(std::move(s).error());
     }
+    // Let the caller rebuild camera-tracking annotations for this frame (ADR-0026):
+    // params already reflects the current camera (applyCamera ran before drawFrame).
+    if (onFrame) {
+        onFrame(overlay, params, swapExtent.width, swapExtent.height);
+    }
     // Dispatch + (optional) overlay + blit into the swapchain image; leaves it in
     // eTransferDstOptimal.
     const Overlay* ov = overlay.empty() ? nullptr : &overlay;
@@ -519,6 +525,8 @@ void Viewer::requestResize(std::uint32_t width, std::uint32_t height) noexcept {
 }
 
 Overlay& Viewer::overlay() noexcept { return impl_->overlay; }
+
+void Viewer::setOnFrame(FrameCallback callback) noexcept { impl_->onFrame = std::move(callback); }
 
 Status Viewer::run() {
     IV_ASSERT(impl_->volume.has_value(), "Viewer::run: no volume set");

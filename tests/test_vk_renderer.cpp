@@ -1,11 +1,13 @@
 #include "iv/vk/colormap_lut.hpp"
 #include "iv/vk/context.hpp"
 #include "iv/vk/renderer.hpp"
+#include "iv/vk/view_projection.hpp"
 #include "iv/vk/volume.hpp"
 
 #include "catch_amalgamated.hpp"
 
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstdint>
 #include <cstdlib>
@@ -351,4 +353,69 @@ TEST_CASE("Renderer: overlay composites a quad over the volume (alpha blend)", "
     CHECK(near8(right.r, 0));
     CHECK(near8(right.b, 255));
     CHECK(ctx->validationClean());
+}
+
+// ADR-0026: the view-projection must match the ADR-0012 ray camera exactly — a world
+// point projects to the pixel whose camera ray passes through it. Verify it the rigorous
+// way: project several world points, reconstruct the ADR-0012 ray for the resulting
+// (continuous) pixel, and assert the point lies on that ray. Pure host (no GPU).
+// teeth: transposing M or flipping a sign breaks collinearity.
+namespace {
+
+using Vec3 = std::array<float, 3>;
+Vec3 vsub(const Vec3& a, const Vec3& b) { return {a[0] - b[0], a[1] - b[1], a[2] - b[2]}; }
+float vdot(const Vec3& a, const Vec3& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+Vec3 vcross(const Vec3& a, const Vec3& b) {
+    return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+}
+Vec3 vnorm(const Vec3& a) {
+    const float n = std::sqrt(vdot(a, a));
+    return n > 0.0f ? Vec3{a[0] / n, a[1] / n, a[2] / n} : a;
+}
+
+} // namespace
+
+TEST_CASE("viewProjection matches the ADR-0012 ray camera", "[viewproj]") {
+    RenderParams cam;
+    cam.eye = {2.4f, 1.7f, 2.1f};
+    cam.target = {0.5f, 0.5f, 0.5f};
+    cam.up = {0.0f, 1.0f, 0.0f};
+    cam.vfovRadians = 0.7f;
+    const std::uint32_t W = 320;
+    const std::uint32_t H = 240;
+    const float aspect = static_cast<float>(W) / static_cast<float>(H);
+    const auto M = iv::vk::viewProjection(cam, aspect);
+
+    // ADR-0012 ray basis.
+    const Vec3 w = vnorm(vsub(cam.eye, cam.target));
+    const Vec3 u = vnorm(vcross(cam.up, w));
+    const Vec3 v = vcross(w, u);
+    const float halfH = std::tan(cam.vfovRadians * 0.5f);
+    const float halfW = aspect * halfH;
+
+    const std::array<Vec3, 5> pts{{{0.5f, 0.5f, 0.5f},
+                                   {0.0f, 0.0f, 0.0f},
+                                   {1.0f, 1.0f, 1.0f},
+                                   {0.2f, 0.8f, 0.4f},
+                                   {1.0f, 0.0f, 1.0f}}};
+    for (const Vec3& p : pts) {
+        const auto px = iv::vk::projectToPixel(M, p, W, H);
+        REQUIRE(px[2] > 0.0f); // in front of the camera
+        // Continuous pixel -> ray parameters (ADR-0012, continuous form s=px/W).
+        const float s = px[0] / static_cast<float>(W);
+        const float t = px[1] / static_cast<float>(H);
+        const Vec3 dir{(2.0f * s - 1.0f) * halfW * u[0] + (1.0f - 2.0f * t) * halfH * v[0] - w[0],
+                       (2.0f * s - 1.0f) * halfW * u[1] + (1.0f - 2.0f * t) * halfH * v[1] - w[1],
+                       (2.0f * s - 1.0f) * halfW * u[2] + (1.0f - 2.0f * t) * halfH * v[2] - w[2]};
+        // P must lie on the ray from eye: (P - eye) parallel to dir.
+        const Vec3 pe = vsub(p, cam.eye);
+        const Vec3 c = vcross(vnorm(pe), vnorm(dir));
+        const float collinearity = std::sqrt(vdot(c, c)); // 0 when parallel
+        CHECK(collinearity < 1e-3f);
+    }
+
+    // The cube center projects near the image center for a centered camera.
+    const auto centerPx = iv::vk::projectToPixel(M, {0.5f, 0.5f, 0.5f}, W, H);
+    CHECK(std::abs(centerPx[0] - static_cast<float>(W) * 0.5f) < 1.0f);
+    CHECK(std::abs(centerPx[1] - static_cast<float>(H) * 0.5f) < 1.0f);
 }

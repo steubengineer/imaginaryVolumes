@@ -65,6 +65,7 @@ add_library(iv
     src/vk/offscreen.cpp
     src/vk/volume.cpp
     src/vk/shaders.cpp
+    src/vk/view_projection.cpp
     src/vk/renderer.cpp)
 add_library(iv::iv ALIAS iv)
 target_include_directories(iv PUBLIC
@@ -148,7 +149,8 @@ if(IV_BUILD_TEXT)
         VERBATIM)
 
     add_library(iv_text STATIC
-        src/text/shaper.cpp src/text/bundled_font.cpp src/text/text_layout.cpp ${IV_FONT_GEN})
+        src/text/shaper.cpp src/text/bundled_font.cpp src/text/text_layout.cpp
+        src/text/annotations.cpp ${IV_FONT_GEN})
     add_library(iv::text ALIAS iv_text)
     # iv is PUBLIC: shaper.hpp includes iv/error.hpp. harfbuzz_core is PRIVATE:
     # HarfBuzz is hidden behind the Shaper (ADR-0004), only shaper.cpp needs it.
@@ -201,4 +203,10 @@ if(IV_BUILD_VIEWER)
 
     add_executable(iv_view examples/view_demo.cpp)
     target_link_libraries(iv_view PRIVATE iv_viewer iv_warnings)
+    # With text built, the viewer demo shows a labeled, camera-tracking plot
+    # (ADR-0024/0026); otherwise it falls back to a simple line/quad overlay.
+    if(IV_BUILD_TEXT)
+        target_link_libraries(iv_view PRIVATE iv_text)
+        target_compile_definitions(iv_view PRIVATE IV_VIEW_TEXT)
+    endif()
 endif()

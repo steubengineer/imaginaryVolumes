@@ -17,10 +17,11 @@
 #include "iv/error.hpp"
 #include "iv/orbit_camera.hpp"
 #include "iv/vk/context.hpp"
-#include "iv/vk/renderer.hpp" // RenderParams
+#include "iv/vk/renderer.hpp" // RenderParams, Overlay
 #include "iv/vk/volume.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 namespace iv::vk {
@@ -65,6 +66,14 @@ public:
     // Live-editable overlay (lines + quads) drawn over the volume each frame
     // (ADR-0021); empty by default. M7 populates it with the box / axes / legend.
     [[nodiscard]] Overlay& overlay() noexcept;
+
+    // Per-frame callback (ADR-0026), invoked just before each frame is recorded with
+    // the live overlay, the current camera-applied RenderParams, and the framebuffer
+    // size (pixels). Use it to rebuild camera-tracking annotations each frame, e.g.
+    // iv::text::buildAnnotations(overlay, axes, params, w, h, shaper). Empty by default.
+    using FrameCallback =
+        std::function<void(Overlay&, const RenderParams&, std::uint32_t, std::uint32_t)>;
+    void setOnFrame(FrameCallback callback) noexcept;
 
     // Enter the present loop until the window is closed (ADR-0017). Requires a
     // Volume to have been set.

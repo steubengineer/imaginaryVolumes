@@ -15,6 +15,13 @@
 #include "iv/vk/viewer.hpp"
 #include "iv/vk/volume.hpp"
 
+#ifdef IV_VIEW_TEXT
+#include "iv/plot_axes.hpp"
+#include "iv/text/annotations.hpp"
+#include "iv/text/bundled_font.hpp"
+#include "iv/text/shaper.hpp"
+#endif
+
 #include <array>
 #include <complex>
 #include <cstdio>
@@ -72,9 +79,27 @@ int main(int argc, char** argv) {
     viewer->params().background = {0.05f, 0.05f, 0.07f, 1.0f};
     viewer->params().densityScale = 2.5f;
 
-    // A small screen-space overlay (ADR-0021): a white center crosshair (lines) and a
-    // translucent cyan corner quad (triangles) — exercises the overlay graphics pass
-    // in the windowed path. M7 replaces this with the bounding box / axes / legend.
+#ifdef IV_VIEW_TEXT
+    // A labeled, camera-tracking plot (ADR-0024/0026): a bounding box with ticked,
+    // labeled axes rebuilt each frame from the live camera. The shaper + axes outlive
+    // run() (captured by reference in the per-frame callback).
+    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
+    if (!shaper) {
+        std::fprintf(stderr, "Shaper::create failed: %s\n", iv::format(shaper.error()).c_str());
+        return 1;
+    }
+    iv::PlotAxes axes;
+    axes.x = iv::Axis{0.0, 1.0, "x", "", {}, {}};
+    axes.y = iv::Axis{0.0, 1.0, "y", "", {}, {}};
+    axes.z = iv::Axis{-1.0, 1.0, "z", "", {}, {}};
+    axes.title = "phase vortex";
+    viewer->setOnFrame([&axes, &shaper](iv::vk::Overlay& ov, const iv::vk::RenderParams& cam,
+                                        std::uint32_t w, std::uint32_t h) {
+        iv::text::buildAnnotations(ov, axes, cam, w, h, *shaper);
+    });
+#else
+    // Text disabled: a small screen-space overlay (ADR-0021) instead — a white center
+    // crosshair (lines) and a translucent cyan corner quad (triangles).
     {
         auto& ov = viewer->overlay();
         const std::array<float, 4> white{1.0f, 1.0f, 1.0f, 0.8f};
@@ -85,6 +110,7 @@ int main(int argc, char** argv) {
         ov.triangles = {q(-1.0f, -1.0f), q(-0.6f, -1.0f), q(-0.6f, -0.6f),
                         q(-1.0f, -1.0f), q(-0.6f, -0.6f), q(-1.0f, -0.6f)};
     }
+#endif
 
     iv::Status status;
     if (frames > 0) {

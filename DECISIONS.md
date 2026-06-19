@@ -10,6 +10,23 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0024 — PNG demo export via an owned minimal encoder (no new dependency)
+- **Date / milestone:** 2026-06-19 / post-M4 (tooling)
+- **Choice:** How to save rendered frames as PNG for demos — add a PNG library
+  (libpng / lodepng / stb_image_write) vs. write the encoder ourselves.
+- **Decision:** Hand-roll a minimal RGBA8 PNG writer (uncompressed DEFLATE
+  "stored" blocks; CRC-32 + Adler-32) in `examples/png.hpp`, used by
+  `examples/render_demo`. No new dependency; files are larger than
+  zlib-compressed PNGs but valid and viewable anywhere. Demo images go to a
+  gitignored `gallery/` (regenerable, not committed).
+- **Rationale:** Matches the minimal-deps / own-the-boilerplate stance; avoids a
+  dependency ADR (§1.1) for example-only tooling; the encoder is ~150 lines and
+  self-contained.
+- **Contract impact:** none — examples are not part of `libiv` and not on the test
+  gate; no public-contract or dependency change (hence no ADR).
+- **Deferred alternatives:** a real (zlib-compressed) PNG or stb_image_write if
+  demo image size ever matters — would then warrant a dependency decision.
+
 ### D-0023 — M4 coordinate frame & DVR convention (RH, +Y up, unit-cube = texcoord)
 - **Date / milestone:** 2026-06-19 / M4 (CONTRACT)
 - **Choice:** The §5 conventions for the renderer: handedness/up-axis, where the

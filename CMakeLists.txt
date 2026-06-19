@@ -114,3 +114,9 @@ if(BUILD_TESTING)
     add_subdirectory(third_party/catch2)
     add_subdirectory(tests)
 endif()
+
+# --- Example programs (off the test gate; demonstrate the public API) ---
+option(IV_BUILD_EXAMPLES "Build example programs" ON)
+if(IV_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()

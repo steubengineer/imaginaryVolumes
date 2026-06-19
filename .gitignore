@@ -25,6 +25,9 @@ compile_commands.json
 *.gcda
 *.gcno
 
+# Demo output (regenerate with examples/iv_render_demo)
+/gallery/
+
 # Editor / OS noise
 .vscode/
 .idea/

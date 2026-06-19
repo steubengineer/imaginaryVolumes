@@ -92,6 +92,9 @@ D-0016) or stays classic.
 - Contracts: `docs/adr/INDEX.md` — ADR-0001…0014 Accepted.
 - Decisions & rationale: `DECISIONS.md` (D-0001…D-0023), Backlog B-0001…B-0007.
 - M1–M4 work + teeth: `CHANGELOG.md`.
+- Demo: `examples/iv_render_demo [out_dir]` renders sample complex fields and
+  writes PNGs via the owned `examples/png.hpp` (D-0024); outputs to gitignored
+  `gallery/` (regenerable, not committed).
 - Code: host model `include/iv/volume.hpp`, `src/volume.cpp`; Vulkan
   `include/iv/vk/`, `src/vk/` (commands, memory, shaders, context, offscreen,
   volume, renderer); shaders `shaders/`; generated `colormap_lut.hpp`; tests

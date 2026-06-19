@@ -149,13 +149,23 @@ private:
     // Record the overlay graphics pass (ADR-0021): begin the render pass on
     // `framebuffer`, draw `lineVertexCount` line vertices then `triangleVertexCount`
     // triangle vertices from `vbuf` (lines at offset 0, triangles immediately after),
-    // then — if `glyphs` is non-null with vertexCount > 0 — the Slug glyph quads
-    // (ADR-0023), end. The caller transitions the target to eColorAttachmentOptimal
-    // and uploads the vertices beforehand.
+    // then — if `glyphVertexCount > 0` — the Slug glyph quads (ADR-0023) from
+    // `glyphVbuf` with the atlas `glyphSet`, end. The caller transitions the target to
+    // eColorAttachmentOptimal and uploads the vertices beforehand. Passing glyph
+    // handles (not a GlyphResources) lets the headless and present paths share this.
     void drawOverlay(::vk::CommandBuffer cmd, ::vk::Framebuffer framebuffer, ::vk::Extent2D extent,
                      ::vk::Buffer vbuf, std::uint32_t lineVertexCount,
                      std::uint32_t triangleVertexCount, const std::array<float, 16>& transform,
-                     const GlyphResources* glyphs);
+                     ::vk::Buffer glyphVbuf, ::vk::DescriptorSet glyphSet,
+                     std::uint32_t glyphVertexCount);
+
+    // Present-path glyph resources (ADR-0025): grow the persistent glyph vertex and
+    // atlas (uniform texel) buffers on demand and re-upload `glyphs`/`atlas`,
+    // (re)creating the atlas view + descriptor only on growth. Sets
+    // frameGlyph* below; safe to overwrite (one frame in flight, ADR-0017). No-op
+    // (vertex count 0) for an empty glyph list.
+    [[nodiscard]] Status ensureFrameGlyphResources(const std::vector<GlyphVertex>& glyphs,
+                                                   std::span<const std::int16_t> atlas);
 
     // Borrowed from the Context, which must outlive this Renderer.
     ::vk::Device device_{};
@@ -216,6 +226,23 @@ private:
     Unique<::vk::Buffer> frameOverlayBuf_;
     void* frameOverlayMapped_{nullptr};
     ::vk::DeviceSize frameOverlayCapacity_{0};
+
+    // Present-path Slug glyph resources (ADR-0025): persistent, grown on demand. The
+    // atlas buffer/view + descriptor are recreated only when the atlas outgrows
+    // capacity; the vertex and atlas data are re-uploaded each frame (cheap for
+    // labels). Declared so each view is destroyed before its backing buffer/memory.
+    Unique<::vk::DeviceMemory> frameGlyphVbufMem_;
+    Unique<::vk::Buffer> frameGlyphVbuf_;
+    void* frameGlyphVbufMapped_{nullptr};
+    ::vk::DeviceSize frameGlyphVbufCapacity_{0};
+    Unique<::vk::DeviceMemory> frameGlyphAtlasMem_;
+    Unique<::vk::Buffer> frameGlyphAtlasBuf_;
+    void* frameGlyphAtlasMapped_{nullptr};
+    ::vk::DeviceSize frameGlyphAtlasCapacity_{0};
+    Unique<::vk::BufferView> frameGlyphAtlasView_;
+    Unique<::vk::DescriptorPool> frameGlyphPool_;
+    ::vk::DescriptorSet frameGlyphSet_{};
+    std::uint32_t frameGlyphVertexCount_{0};
 };
 
 } // namespace iv::vk

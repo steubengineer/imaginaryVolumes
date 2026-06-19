@@ -1,9 +1,14 @@
 #include "iv/text/bundled_font.hpp"
 #include "iv/text/shaper.hpp"
 #include "iv/text/text_layout.hpp"
+#include "iv/vk/commands.hpp"
 #include "iv/vk/context.hpp"
+#include "iv/vk/memory.hpp"
+#include "iv/vk/offscreen.hpp"
 #include "iv/vk/renderer.hpp"
+#include "iv/vk/unique.hpp"
 #include "iv/vk/volume.hpp"
+#include "iv/vk/vulkan.hpp"
 #include "iv/volume.hpp"
 
 #include "catch_amalgamated.hpp"
@@ -12,7 +17,9 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <numeric>
+#include <utility>
 #include <vector>
 
 using iv::text::bundledFont;
@@ -281,6 +288,121 @@ TEST_CASE("Slug glyph coverage scales with size (resolution independence)", "[gl
     // Area ~ size^2 => 2x size -> ~4x ink. Wide tolerance for edge/rounding effects.
     CHECK(static_cast<double>(inkLarge) > 3.0 * inkSmall);
     CHECK(static_cast<double>(inkLarge) < 5.0 * inkSmall);
+    CHECK(ctx->validationClean());
+}
+
+namespace {
+
+// Drive the present path (Renderer::recordFrame, ADR-0025) into a target image and
+// read it back — the same code the viewer records, exercised headlessly.
+iv::vk::ImageReadback recordFrameReadback(const iv::vk::Context& ctx, iv::vk::Renderer& rend,
+                                          const iv::vk::Volume& vol,
+                                          const iv::vk::RenderParams& params, std::uint32_t w,
+                                          std::uint32_t h, const iv::vk::Overlay& ov) {
+    const vk::Device device = ctx.device();
+    const vk::PhysicalDevice phys = ctx.physicalDevice();
+    const vk::DeviceSize bytes = static_cast<vk::DeviceSize>(w) * h * 4u;
+
+    auto imgRv = device.createImage(vk::ImageCreateInfo{}
+                                        .setImageType(vk::ImageType::e2D)
+                                        .setFormat(vk::Format::eR8G8B8A8Unorm)
+                                        .setExtent(vk::Extent3D{w, h, 1u})
+                                        .setMipLevels(1u)
+                                        .setArrayLayers(1u)
+                                        .setSamples(vk::SampleCountFlagBits::e1)
+                                        .setTiling(vk::ImageTiling::eOptimal)
+                                        .setUsage(vk::ImageUsageFlagBits::eTransferDst
+                                                  | vk::ImageUsageFlagBits::eTransferSrc)
+                                        .setInitialLayout(vk::ImageLayout::eUndefined));
+    REQUIRE(imgRv.result == vk::Result::eSuccess);
+    iv::vk::Unique<vk::Image> dstImage(imgRv.value, [device](vk::Image x) { device.destroyImage(x); });
+    auto imem = iv::vk::allocateAndBindImage(device, phys, dstImage.get(),
+                                             vk::MemoryPropertyFlagBits::eDeviceLocal, "test dst");
+    REQUIRE(imem.has_value());
+
+    auto bufRv = device.createBuffer(vk::BufferCreateInfo{}
+                                         .setSize(bytes)
+                                         .setUsage(vk::BufferUsageFlagBits::eTransferDst)
+                                         .setSharingMode(vk::SharingMode::eExclusive));
+    REQUIRE(bufRv.result == vk::Result::eSuccess);
+    iv::vk::Unique<vk::Buffer> staging(bufRv.value, [device](vk::Buffer x) { device.destroyBuffer(x); });
+    auto bmem = iv::vk::allocateAndBindBuffer(device, phys, staging.get(),
+                                              vk::MemoryPropertyFlagBits::eHostVisible
+                                                  | vk::MemoryPropertyFlagBits::eHostCoherent,
+                                              "test staging");
+    REQUIRE(bmem.has_value());
+
+    const auto region = vk::BufferImageCopy{}
+                            .setImageSubresource(vk::ImageSubresourceLayers{
+                                vk::ImageAspectFlagBits::eColor, 0u, 0u, 1u})
+                            .setImageExtent(vk::Extent3D{w, h, 1u});
+    const auto st = iv::vk::submitOneShot(
+        device, ctx.queue(), ctx.commandPool(), [&](vk::CommandBuffer cmd) {
+            const auto s =
+                rend.recordFrame(cmd, vol, params, dstImage.get(), vk::Extent2D{w, h}, &ov);
+            REQUIRE(s.has_value());
+            // recordFrame leaves dstImage in eTransferDstOptimal -> transition to read it.
+            cmd.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
+                vk::DependencyFlags{}, nullptr, nullptr,
+                iv::vk::imageBarrier(dstImage.get(), vk::ImageLayout::eTransferDstOptimal,
+                                     vk::ImageLayout::eTransferSrcOptimal,
+                                     vk::AccessFlagBits::eTransferWrite,
+                                     vk::AccessFlagBits::eTransferRead));
+            cmd.copyImageToBuffer(dstImage.get(), vk::ImageLayout::eTransferSrcOptimal, staging.get(),
+                                  region);
+        });
+    REQUIRE(st.has_value());
+
+    auto mapRv = device.mapMemory(bmem->get(), 0, bytes);
+    REQUIRE(mapRv.result == vk::Result::eSuccess);
+    std::vector<std::uint8_t> out(static_cast<std::size_t>(bytes));
+    std::memcpy(out.data(), mapRv.value, static_cast<std::size_t>(bytes));
+    device.unmapMemory(bmem->get());
+    return iv::vk::ImageReadback(w, h, std::move(out));
+}
+
+} // namespace
+
+// ADR-0025: the viewer's present path (recordFrame) renders Slug glyphs, not only the
+// headless render() path. Same 'H' over a black volume, driven through recordFrame and
+// read back, paints in-range ink with mid-row crossings and a background exterior.
+// teeth: skipping the present-path glyph draw makes ink == 0 (shared with ADR-0023).
+TEST_CASE("Slug glyphs render on the present path (recordFrame)", "[glyph][vk]") {
+    using iv::GridDims;
+    using iv::vk::Context;
+    using iv::vk::Renderer;
+    using iv::vk::Volume;
+
+    auto ctx = Context::create();
+    REQUIRE(ctx.has_value());
+    auto rend = Renderer::create(*ctx);
+    REQUIRE(rend.has_value());
+    const GridDims d{8, 8, 8};
+    auto vol = Volume::create(*ctx, emptyField(d), d);
+    REQUIRE(vol.has_value());
+
+    iv::vk::RenderParams p;
+    p.background = {0.0f, 0.0f, 0.0f, 1.0f};
+
+    const std::uint32_t W = 128;
+    const std::uint32_t H = 128;
+    auto shaper = Shaper::create(bundledFont(), 96.0f);
+    REQUIRE(shaper);
+    iv::vk::Overlay ov;
+    iv::text::appendText(ov, *shaper, "H", 28.0f, 97.0f, W, H, {{1.0f, 1.0f, 1.0f, 1.0f}});
+    REQUIRE_FALSE(ov.glyphs.empty());
+
+    const iv::vk::ImageReadback img = recordFrameReadback(*ctx, *rend, *vol, p, W, H, ov);
+    const InkCount ink = countInk(img, W, H, 64);
+    INFO("present-path ink total=" << ink.total << " row64=" << ink.onRow);
+    CHECK(ink.total > 200);
+    CHECK(ink.total < 8000);
+    CHECK(ink.onRow >= 3);
+    const auto outside = img.at(118, 64);
+    CHECK(outside.r < 24);
+    CHECK(outside.g < 24);
+    CHECK(outside.b < 24);
     CHECK(ctx->validationClean());
 }
 

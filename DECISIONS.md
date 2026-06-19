@@ -10,6 +10,56 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0039 — M7 scene annotations: projection, outer-edge labels, through-axes
+- **Date / milestone:** 2026-06-19 / M7 (CONTRACT) — maintainer-approved
+- **Choice:** How the box/axes/ticks/labels are placed and which box edges carry
+  labels so they never overlap the data.
+- **Decision:** A host **view-projection matching the ADR-0012 ray camera** drives
+  world-space box/tick/through-axis lines via `Overlay::transform`; **labels are
+  screen-space glyphs** (upright, fixed size). A cube edge is **outer/silhouette** iff
+  its two faces differ in facing (`sign(n₁·d) ≠ sign(n₂·d)`); `Outer` box ticks and the
+  per-axis **label edge** (chosen by a **down-and-out** screen preference, labels
+  offset outward) both use it, so labels lie outside the projected box. The silhouette
+  is used for label anchoring even when the box isn't drawn. Through-axes draw line +
+  ticks but **no labels**. A host builder fills an `Overlay` from `PlotAxes` + camera +
+  `Shaper`, identical headless + viewer.
+- **Rationale:** Outer-edge labels are the publication convention and provably avoid
+  data overlap; the exact silhouette test is cheaper than a convex hull.
+- **Contract impact:** ADR-0026 (Accepted). Deferred refinement: label-edge hysteresis
+  to damp swap-flicker on camera motion.
+
+### D-0038 — M7 present-path glyph rendering: persist + split by change rate
+- **Date / milestone:** 2026-06-19 / M7 (CONTRACT) — maintainer-approved
+- **Choice:** How viewer text (B-0010) reaches the present path without per-frame
+  allocation churn.
+- **Decision:** Persist the glyph resources in the `Renderer` across the in-flight
+  frame (ADR-0017, one frame in flight → overwrite is safe). **Split by change rate:**
+  the **atlas + descriptor** rebuild only when text content changes; the **vertex
+  buffer** is grown-on-demand and overwritten every frame (quad positions move with the
+  camera). `recordFrame()` then draws `Overlay::glyphs` byte-identically to `render()`,
+  closing the ADR-0023/D-0036 headless-only scope and resolving **B-0010**.
+- **Rationale:** Avoids per-frame descriptor/buffer-view creation; glyph outlines are
+  camera-independent so only positions need re-upload.
+- **Contract impact:** ADR-0025 (Accepted).
+
+### D-0037 — M7 plot model: declarative axes, data-unit placement, nice ticks
+- **Date / milestone:** 2026-06-19 / M7 (CONTRACT) — maintainer decision
+- **Choice:** The public model for mapping the `[0,1]³` grid to physical coordinates
+  and declaring the plot's annotations.
+- **Decision:** A **declarative `iv::PlotAxes`** (pure host, core `iv`): per-axis
+  `{min, max, label, unit, majorCount?, minorCount?}` + title; **every element
+  optional** (box, box ticks, tick labels, axis labels, title). Ticks are **auto nice
+  numbers** (`{1,2,5}·10ᵏ`, Heckbert) — **major + minor**, optional per-axis counts,
+  **only major ticks labeled** (value only; unit on the axis label). **Reference axes
+  through the volume** (`ThroughAxis`) are placed in the caller's **data units** (never
+  world `[0,1]`); they carry ticks but **no labels**. Box ticks default to **`Outer`**
+  (silhouette edges) for clarity, with **`AllFaces`** available.
+- **Rationale:** Lowest caller effort; callers stay in their own units; per-element
+  optionality spans minimalist→fully-annotated. Maintainer chose declarative over
+  caller-supplied ticks, data-unit over world-unit locations, and outer-only default.
+- **Contract impact:** ADR-0024 (Accepted). Deferred: log axes, custom formatters,
+  π-multiple ticks.
+
 ### D-0036 — M6 Slug glyph rendering: integration specifics + headless-only scope
 - **Date / milestone:** 2026-06-19 / M6 (IMPLEMENT, ADR-0023)
 - **Choice:** How libharfbuzz-gpu's experimental Slug encoder/shaders bind to our

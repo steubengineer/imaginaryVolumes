@@ -58,6 +58,7 @@ add_library(iv
     src/error.cpp
     src/assert.cpp
     src/volume.cpp
+    src/plot_axes.cpp
     src/vk/result.cpp
     src/vk/memory.cpp
     src/vk/context.cpp

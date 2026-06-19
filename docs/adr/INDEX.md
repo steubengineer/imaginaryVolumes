@@ -28,3 +28,6 @@
 | [ADR-0021](0021-annotation-overlay-substrate.md) | 2D Annotation / Overlay Rendering Substrate | Accepted | — |
 | [ADR-0022](0022-vendored-harfbuzz-text-shaping.md) | Vendored HarfBuzz Dependency & Unicode Text Shaping | Accepted | — |
 | [ADR-0023](0023-gpu-glyph-rendering-harfbuzz-gpu-slug.md) | GPU Glyph Rendering via libharfbuzz-gpu (Slug) | Accepted | — |
+| [ADR-0024](0024-plot-coordinate-model-and-axis-api.md) | Plot Coordinate Model, Declarative Axis/Label API & Tick Generation | Accepted | — |
+| [ADR-0025](0025-present-path-glyph-rendering.md) | Present-Path (Viewer) Glyph Rendering | Accepted | — |
+| [ADR-0026](0026-world-space-scene-annotations.md) | World-Space Scene Annotations — Bounding Box, Ticked Axes & Labels | Accepted | — |

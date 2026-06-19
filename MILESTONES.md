@@ -29,7 +29,9 @@ renderer headlessly via deterministic pixel readback before the window exists.
 5. **M5** — Interactive viewer (swapchain/GLFW) & performance contract.
 6. **M6** — Text & annotation foundation (overlay pass, opacity correction, HarfBuzz
    shaping + libharfbuzz-gpu/Slug glyph rendering).
-7. **M7** — Quantitative plot annotations (bounding box, ticked axes, legend, labels).
+7. **M7** — Bounding box, ticked axes & labels (declarative axis model, nice ticks,
+   world-space box/axes + labels in both paths).
+8. **M8** — Legend/colorbar & high-level plot API.
 
 ---
 
@@ -243,28 +245,57 @@ renderer headlessly via deterministic pixel readback before the window exists.
   ADR-0020), c951229 (ADR-0021), 557000b (ADR-0022), ee235a4 (ADR-0023). Scope note:
   Slug glyphs render on the headless path; viewer text is M7 (D-0036, B-0010).
 
-## M7 — Quantitative Plot Annotations
-- **Status:** Planned.
-- **Goal:** Turn the M6 foundation into a labeled, publication-quality plot: the
-  volume **bounding box** with **ticked, labeled axes** (B-0007), a **legend/colorbar**
-  (phase color wheel + magnitude scale), a caller-supplied **coordinate range / units
-  / label** model (map the voxel grid to physical coordinates), and the public API to
-  set titles/axis/legend label strings (Unicode; LaTeX still deferred). (Second half
-  of the "usable scientific plotting library" goal.)
+## M7 — Bounding Box, Ticked Axes & Labels
+- **Status:** Planned (CONTRACT in progress, 2026-06-19).
+- **Goal:** Turn the M6 foundation into a **spatially labeled plot**: the volume
+  **bounding box** with **ticked, labeled axes** (B-0007), drawn over the render in
+  **both headless images and the interactive viewer**. A **declarative axis model**
+  maps the `[0,1]³` grid to caller-specified physical coordinates — per-axis
+  `{min, max, label, unit}` + a plot **title** — and the library **auto-generates
+  nice major + minor tick marks** (optionally caller-set counts per axis), **labeling
+  the major ticks** with formatted values. Unicode text; LaTeX still deferred.
+  Legend/colorbar and a high-level `plot()` facade are **deferred to M8**. (Narrowed
+  at CONTRACT from the original "annotations" scope per the maintainer.)
 - **Done when:**
-  - [ ] Caller sets per-axis coordinate ranges + unit/label strings; the render maps
-        the `[0,1]³` grid to those physical coordinates.
-  - [ ] Bounding box + ticked axes with numeric tick labels render over the volume.
+  - [ ] Caller sets per-axis `{min, max, label, unit}` + a title declaratively; the
+        render maps `[0,1]³` to those physical coordinates.
+  - [ ] The library auto-generates nice **major + minor** ticks per axis (default
+        counts; caller may override per axis); **major** ticks carry formatted value
+        labels.
+  - [ ] Bounding box + ticked axes render in **world space** (aligned to the volume,
+        ADR-0012 projection) over the render, in **both** `Renderer::render()` and
+        the `Viewer`.
+  - [ ] Axis labels, the title, and tick-value labels render as crisp text in **both**
+        paths (present-path glyph rendering completed — B-0010).
+- **Expected ADRs:**
+  - Plot **coordinate model** + declarative axis/label API + nice-number tick
+    generation (major/minor, optional counts; pure host).
+  - **Present-path (viewer) glyph rendering** — completes ADR-0023 (B-0010) so labels
+    show in the viewer, not only headless.
+  - **World-space scene annotations** — bounding box + ticked axes + placed labels
+    (title/axis/tick) over the volume; projected by the ADR-0012 camera via the
+    overlay transform (ADR-0021), headless + viewer.
+- **Tests with teeth:** tick-generation/coordinate-mapping (teeth: wrong nice-number
+  rounding or axis mapping → tick positions/values diverge from the reference → red);
+  box/axis world-space alignment (teeth: perturb the view-projection → the box no
+  longer aligns with the rendered volume silhouette → red); label rendering in both
+  paths (teeth: skip the label draw → blank → red). Refined at CONTRACT.
+- **Actual ADRs:** _(filled at completion)_
+
+## M8 — Legend/Colorbar & High-Level Plot API
+- **Status:** Planned.
+- **Goal:** Complete the "usable scientific plotting library": a **legend/colorbar**
+  (the phase→color wheel + the magnitude→opacity scale, with labeled bounds, matching
+  the ADR-0013/0014 transfer function/colormap) and a **high-level convenience API**
+  (a one-call `plot(field, dims, options)` path over the two-step volume/viewer setup).
+  Deferred here from M7 to keep M7 to ~3 ADRs (§2.2).
+- **Done when:**
   - [ ] A legend/colorbar shows the phase→color wheel and the magnitude→opacity scale
-        with labeled bounds.
+        with labeled bounds, consistent with the active transfer function/colormap.
   - [ ] A high-level "plot this field" path produces a fully labeled image headless
         and in the viewer.
-- **Expected ADRs:**
-  - Coordinate / units / scene-annotation model + public label API.
-  - Bounding box + axis ticks/labels (B-0007).
-  - Legend / colorbar (phase wheel + magnitude scale).
-  - (Possibly) a high-level convenience API over the two-step viewer/volume setup.
-- **Tests with teeth:** coordinate-mapping test (teeth: wrong axis mapping → tick
-  positions diverge → red); legend/colorbar correctness vs. the transfer
-  function/colormap (teeth: mismatch → red). Refined at M7 CONTRACT.
+- **Expected ADRs:** legend/colorbar (phase wheel + magnitude scale); high-level plot
+  API over the viewer/volume setup.
+- **Tests with teeth:** legend/colorbar correctness vs. the transfer function/colormap
+  (teeth: mismatch → red). Refined at M8 CONTRACT.
 - **Actual ADRs:** _(filled at completion)_

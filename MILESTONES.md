@@ -194,3 +194,66 @@ renderer headlessly via deterministic pixel readback before the window exists.
   (swapchain & present loop), ADR-0018 (interaction & camera control), ADR-0019
   (performance contract & benchmark). Decisions D-0026…D-0030; Backlog B-0008.
 - **Note:** completed exactly as scoped (4 ADRs, ≤ ~5 per §2.2; no split).
+
+## M6 — Text & Annotation Foundation
+- **Status:** Planned (CONTRACT in progress, 2026-06-19).
+- **Goal:** The rendering foundation for *publication-quality, quantitatively
+  legible* plots: (a) a 2D screen-space **overlay** pass (the project's first
+  graphics pipeline) composited over the compute-rendered volume, working
+  identically headless and windowed; (b) **crisp Unicode text** via vendored
+  **HarfBuzz** shaping + **libharfbuzz-gpu** (Slug algorithm) resolution-independent
+  GPU glyph rendering; and (c) **opacity correction** so displayed density is
+  invariant to `stepCount` (B-0008). This is the substrate M7 builds annotations on.
+  LaTeX math is explicitly **deferred** to a later milestone; M6 labels are
+  text/Unicode. (First half of the "usable scientific plotting library" goal; split
+  from M7 per §2.2.)
+- **Done when:**
+  - [ ] Opacity is corrected for ray step spacing: the rendered density of a fixed
+        field is invariant to `stepCount` (within tolerance) (B-0008; extends
+        ADR-0013).
+  - [ ] A 2D overlay (lines + textured quads) composites over the volume render in
+        both `Renderer::render()` (headless) and the `Viewer`.
+  - [ ] HarfBuzz (vendored, pinned) shapes a Unicode string to positioned glyphs;
+        `libharfbuzz-gpu` (Slug) renders them resolution-independently on the GPU.
+  - [ ] A demo/headless image shows a crisp Unicode text string + a line/box drawn
+        over the volume, legible across a zoom range.
+- **Expected ADRs:**
+  - Opacity correction (`dt`-correct transfer function; extends ADR-0013).
+  - 2D annotation/overlay substrate (first graphics pipeline; compositing over the
+    compute output; headless + windowed).
+  - Vendored **HarfBuzz** dependency + Unicode text shaping (the new third-party
+    dependency, §1.1: vendoring mechanism, pinned commit, license, build).
+  - GPU glyph rendering via **libharfbuzz-gpu** (Slug); its GLSL shaders through the
+    existing glslc→SPIR-V→embed toolchain (ADR-0011/D-0022).
+- **Tests with teeth:** opacity-correction invariance test (teeth: revert to
+  uncorrected α → density changes with `stepCount` → red); overlay composited
+  validation-clean (teeth: a deliberately wrong layout/barrier → validation error);
+  a known-string glyph-coverage/render test (teeth: perturb shaping positions or the
+  Slug encode → the rendered text pixels diverge from the reference → red).
+- **Actual ADRs:** _(filled at completion)_
+
+## M7 — Quantitative Plot Annotations
+- **Status:** Planned.
+- **Goal:** Turn the M6 foundation into a labeled, publication-quality plot: the
+  volume **bounding box** with **ticked, labeled axes** (B-0007), a **legend/colorbar**
+  (phase color wheel + magnitude scale), a caller-supplied **coordinate range / units
+  / label** model (map the voxel grid to physical coordinates), and the public API to
+  set titles/axis/legend label strings (Unicode; LaTeX still deferred). (Second half
+  of the "usable scientific plotting library" goal.)
+- **Done when:**
+  - [ ] Caller sets per-axis coordinate ranges + unit/label strings; the render maps
+        the `[0,1]³` grid to those physical coordinates.
+  - [ ] Bounding box + ticked axes with numeric tick labels render over the volume.
+  - [ ] A legend/colorbar shows the phase→color wheel and the magnitude→opacity scale
+        with labeled bounds.
+  - [ ] A high-level "plot this field" path produces a fully labeled image headless
+        and in the viewer.
+- **Expected ADRs:**
+  - Coordinate / units / scene-annotation model + public label API.
+  - Bounding box + axis ticks/labels (B-0007).
+  - Legend / colorbar (phase wheel + magnitude scale).
+  - (Possibly) a high-level convenience API over the two-step viewer/volume setup.
+- **Tests with teeth:** coordinate-mapping test (teeth: wrong axis mapping → tick
+  positions diverge → red); legend/colorbar correctness vs. the transfer
+  function/colormap (teeth: mismatch → red). Refined at M7 CONTRACT.
+- **Actual ADRs:** _(filled at completion)_

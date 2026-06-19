@@ -24,3 +24,7 @@
 | [ADR-0017](0017-swapchain-and-present-loop.md) | Swapchain & Present Loop | Accepted | — |
 | [ADR-0018](0018-interaction-and-camera-control.md) | Interaction & Camera-Control API | Accepted | — |
 | [ADR-0019](0019-performance-contract-and-benchmark.md) | Performance Contract & Benchmark | Accepted | — |
+| [ADR-0020](0020-opacity-correction-for-step-spacing.md) | Opacity Correction for Ray Step Spacing | Accepted | — |
+| [ADR-0021](0021-annotation-overlay-substrate.md) | 2D Annotation / Overlay Rendering Substrate | Accepted | — |
+| [ADR-0022](0022-vendored-harfbuzz-text-shaping.md) | Vendored HarfBuzz Dependency & Unicode Text Shaping | Accepted | — |
+| [ADR-0023](0023-gpu-glyph-rendering-harfbuzz-gpu-slug.md) | GPU Glyph Rendering via libharfbuzz-gpu (Slug) | Accepted | — |

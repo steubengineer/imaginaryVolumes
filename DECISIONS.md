@@ -10,6 +10,74 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0034 — M6 GPU glyph rendering: libharfbuzz-gpu (Slug)
+- **Date / milestone:** 2026-06-19 / M6 (CONTRACT) — maintainer decision
+- **Choice:** How shaped glyphs are rendered crisply on the GPU.
+- **Decision:** Use HarfBuzz's experimental **`libharfbuzz-gpu`** — it encodes glyph
+  outlines for GPU rasterization via the **Slug algorithm** (patent dedicated to the
+  public domain) and ships **GLSL** shaders, compiled through our `glslc`→SPIR-V→embed
+  toolchain (ADR-0011/D-0022). Glyph encodings cached per `(font, glyphId)`; drawn as
+  quads in the overlay pass (ADR-0021), alpha-blended; resolution-independent.
+  Experimental risk mitigated by the pinned vendored commit (D-0033); **MSDF
+  (msdfgen-style) is the documented fallback**.
+- **Rationale:** True outline coverage → publication-quality at any zoom; reuses the
+  font project's own GPU path, matched to our shaper. Corrects the author's earlier
+  framing — Slug is not "part of HarfBuzz" historically, but `libharfbuzz-gpu` now
+  provides exactly this (confirmed from the HarfBuzz README, 2026-06-19).
+- **Contract impact:** ADR-0023 (Proposed).
+- **Deferred alternatives:** MSDF atlas (fallback); Glyphy (deprecated upstream);
+  CPU rasterization (not resolution-independent).
+
+### D-0033 — M6 windowing of text: vendor HarfBuzz (pinned) for Unicode shaping
+- **Date / milestone:** 2026-06-19 / M6 (CONTRACT) — maintainer decision
+- **Choice:** How to acquire the shaper (new dependency, §1.1) and bound its surface.
+- **Decision:** **Vendor HarfBuzz** into `third_party/` at a **pinned commit**
+  (deliberately unlike GLFW's system path, D-0026 — pinning freezes the experimental
+  `libharfbuzz-gpu` API, D-0034). Build minimal (no ICU/GLib/Cairo/FreeType; `hb-draw`
+  supplies outlines), `SYSTEM` includes, **not** under `-Werror`. Wrap behind
+  `iv::text::Shaper` (UTF-8 + font + size → positioned glyphs); no HarfBuzz type in
+  `iv` public headers (ADR-0004). Default font: **New Computer Modern** (the CM/TeX
+  look + a future math face), bundling **GFL-licensed faces only** (vetted from NCM
+  8.1.0; the GPL3+FE+DE subset — `NewCM10-Regular`, `NewCMUncial*`, `*Devanagari` —
+  is excluded). **LaTeX deferred**; M6 labels are text/Unicode.
+- **Rationale:** Industry-standard shaping + the outline source for D-0034; vendoring
+  pins the experimental GPU API and keeps builds reproducible.
+- **Contract impact:** ADR-0022 (Proposed). License (HarfBuzz "Old MIT" + font)
+  recorded at acceptance per §1.1.
+- **Deferred alternatives:** system `find_package`; FreeType; stb_truetype/bitmap
+  fonts (no real shaping); **LaTeX math rendering (deferred to a later milestone)**.
+
+### D-0032 — M6 annotation/overlay substrate: a graphics pass over the compute output
+- **Date / milestone:** 2026-06-19 / M6 (CONTRACT)
+- **Choice:** How 2D/3D annotations (lines, glyph quads, legend) reach the image.
+- **Decision:** Add the project's **first graphics pipeline**: the volume render
+  target also gets `eColorAttachment`; after the compute volume pass, a vertex+fragment
+  pipeline draws the overlay **into the same image** in a **classic `VkRenderPass`**
+  (`loadOp = eLoad`, standard alpha blend). Primitives: lines + (textured/encoded)
+  quads; 3D points projected with the ADR-0012 camera, 2D elements in screen space.
+  Identical headless (`render()` → readback) and windowed (`recordFrame` → blit);
+  classic 1.0 barriers (D-0016). M6 proves it with a test line + glyph quad; box/axes/
+  legend are M7.
+- **Rationale:** Lines + resolution-independent glyph coverage want rasterization/blend
+  hardware; drawing into the volume image keeps compositing and downstream readback/
+  blit trivial; classic render pass adds no device-feature toggle.
+- **Contract impact:** ADR-0021 (Proposed).
+- **Deferred alternatives:** compositing in compute; a separate overlay attachment;
+  `VK_KHR_dynamic_rendering` (to cut boilerplate later).
+
+### D-0031 — M6 opacity correction for ray step spacing (B-0008)
+- **Date / milestone:** 2026-06-19 / M6 (CONTRACT)
+- **Choice:** Make displayed density independent of the sampling rate.
+- **Decision:** Correct per-sample opacity to `α = 1 − (1 − a)^(dt / dt_ref)` (`a` per
+  ADR-0013), with `dt_ref = 1 / kReferenceSteps`, `kReferenceSteps = 256` documented.
+  Composite + early termination unchanged; resolves B-0008 / the D-0030 finding.
+- **Rationale:** Density must be a property of the field + transfer function, not of an
+  arbitrary `stepCount`; also makes accumulation path-length-aware (physically
+  correct) and is a prerequisite for the M7 colorbar to be meaningful.
+- **Contract impact:** ADR-0020 (Proposed; extends ADR-0013).
+- **Deferred alternatives:** pre-integrated transfer functions; exposing `dt_ref` as a
+  public knob.
+
 ### D-0030 — M5 benchmark result + teeth: early-ray termination caps cost (stepCount-insensitive)
 - **Date / milestone:** 2026-06-19 / M5 (IMPLEMENT)
 - **Result:** The ADR-0019 contract is **met**: median **15.3 ms (~65 FPS)** for one
@@ -522,6 +590,18 @@ the same day. Future entries prepend above.)
 - **Contract link:** a new dependency ADR (§1.1) + would amend ADR-0006's memory
   section.
 
+### B-0009 — Declare a top-level project LICENSE
+- **Origin:** M6 font vetting (ADR-0022), 2026-06-19 — the repo has no
+  `LICENSE`/`COPYING` of its own.
+- **What:** Choose and add the project's own license. A usable library should declare
+  one; it also governs whether GPL-with-Distribution-Exception assets (e.g. NCM's
+  `NewCM10-Regular`) could ever be bundled (they require a GPL-compatible program
+  license — we currently sidestep this by bundling **GFL** faces only).
+- **Why deferred / open:** the license choice is the maintainer's; not blocking M6
+  (the bundled NCM faces are GFL, which does not constrain our code license).
+- **Revisit when:** before a public release, or if bundling any GPL+DE asset.
+- **Contract link:** none yet (project-governance, would touch ADR-0001).
+
 ### B-0008 — Opacity correction for sample spacing (dt-independent α)
 - **Origin:** M5 benchmark teeth investigation (D-0030), 2026-06-19.
 - **What:** The per-sample opacity (ADR-0013) does not account for the ray step
@@ -537,6 +617,7 @@ the same day. Future entries prepend above.)
   rendering-model refinement, not a viewer concern.
 - **Revisit when:** the "usable scientific data plotting library" milestone
   (quantitative correctness of opacity / transfer function).
+- **Status:** **Scheduled into M6** — ADR-0020 (Proposed) / D-0031.
 - **Contract link:** would extend ADR-0013 (opacity transfer function).
 
 ### B-0007 — Volume bounding box with axis ticks/labels

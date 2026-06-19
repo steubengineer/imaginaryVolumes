@@ -264,3 +264,49 @@ TEST_CASE("Renderer: phase is correct across the branch cut (no seam)", "[vk][re
     CHECK(static_cast<int>(px.r) > static_cast<int>(px.b) + 40);
     CHECK(ctx->validationClean());
 }
+
+// teeth (ADR-0020): per-sample opacity is corrected for the step spacing dt, so the
+// rendered density is invariant to stepCount. A uniform partial-opacity field is
+// rendered at stepCount 32 and 256: because every sample is identical, corrected
+// accumulation A = 1-(1-a)^(kReferenceSteps*pathLen) is independent of N, so the two
+// renders match. Without the dt-correction, A = 1-(1-a)^N, so the 256-step render is
+// far denser (much brighter over black) and the channels diverge by ~150.
+TEST_CASE("Renderer: opacity is invariant to stepCount (dt-correction)", "[vk][renderer]") {
+    auto ctx = Context::create();
+    REQUIRE(ctx.has_value());
+    auto rend = Renderer::create(*ctx);
+    REQUIRE(rend.has_value());
+
+    const GridDims d{8, 8, 8};
+    auto vol = Volume::create(*ctx, uniformField(d, 1.0f, 0.0f), d); // mag 1 -> per-sample a = density
+    REQUIRE(vol.has_value());
+
+    RenderParams p;
+    p.eye = {0.5f, 0.5f, 2.2f}; // face-on; the central ray crosses the cube
+    p.target = {0.5f, 0.5f, 0.5f};
+    p.up = {0.0f, 1.0f, 0.0f};
+    p.opacityMode = 0;         // linear: a = clamp(density) = 0.01 at every sample
+    p.colormapMode = 1;        // HSV (phase 0 -> cyan)
+    p.densityScale = 0.01f;    // small per-sample alpha so uncorrected A depends on N
+    p.alphaTermination = 2.0f; // unreachable: no early-out can mask the step count
+    p.background = {0.0f, 0.0f, 0.0f, 1.0f};
+
+    p.stepCount = 32u;
+    auto coarse = rend->render(*vol, 64, 64, p);
+    REQUIRE(coarse.has_value());
+    p.stepCount = 256u;
+    auto fine = rend->render(*vol, 64, 64, p);
+    REQUIRE(fine.has_value());
+
+    const auto c = coarse->at(32, 32);
+    const auto f = fine->at(32, 32);
+    // Density is invariant to stepCount (corrected). Reverting the correction makes
+    // the fine render much brighter, so these diverge by far more than the tolerance.
+    CHECK(near8(c.g, f.g, 4));
+    CHECK(near8(c.b, f.b, 4));
+    // Sanity: the pixel is partially-to-mostly opaque cyan (in the accumulation
+    // regime), not background or a degenerate clamp.
+    CHECK(static_cast<int>(f.g) > 40);
+    CHECK(static_cast<int>(f.b) > 40);
+    CHECK(ctx->validationClean());
+}

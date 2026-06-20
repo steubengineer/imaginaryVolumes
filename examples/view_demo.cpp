@@ -7,8 +7,11 @@
 //   iv_view --input FILE --dims NX NY NZ      load a dataset (see format below)
 //   iv_view ... --density D                   opacity density scale (default 2.5)
 //   iv_view ... --decades N                   log mode showing the top N decades of
-//                                             magnitude (ADR-0027); 0 = full range.
-//                                             Adjust live with [ and ].
+//                                             magnitude (ADR-0027); meaningful when N <
+//                                             the data's decade span (printed on load).
+//                                             Uses a gentler density unless --density is
+//                                             given. Adjust live with [ and ] (which
+//                                             engage the window at 4 decades from off).
 //   iv_view ... --frames N                    render N frames then exit (smoke test)
 //
 // Input format: a raw, headerless binary file of NX*NY*NZ complex values as
@@ -99,6 +102,7 @@ int main(int argc, char** argv) {
     GridDims dims{128, 128, 128};
     bool haveDims = false;
     float density = 2.5f;
+    bool densitySet = false;
     float decades = 0.0f; // ADR-0027: log decade window (0 = full range)
 
     for (int i = 1; i < argc; ++i) {
@@ -113,6 +117,7 @@ int main(int argc, char** argv) {
             haveDims = true;
         } else if (std::strcmp(argv[i], "--density") == 0 && i + 1 < argc) {
             density = std::strtof(argv[++i], nullptr);
+            densitySet = true;
         } else if (std::strcmp(argv[i], "--decades") == 0 && i + 1 < argc) {
             decades = std::strtof(argv[++i], nullptr);
         }
@@ -156,6 +161,22 @@ int main(int argc, char** argv) {
     if (!vol) {
         std::fprintf(stderr, "Volume::create failed: %s\n", iv::format(vol.error()).c_str());
         return 1;
+    }
+
+    // Report the data's dynamic range so a meaningful --decades can be chosen: the log
+    // decade window only changes the image when N < the data's own decade span.
+    const auto mr = vol->magnitudeRange();
+    const double span = (mr.minPositive > 0.0f && mr.max > mr.minPositive)
+                            ? std::log10(static_cast<double>(mr.max) / static_cast<double>(mr.minPositive))
+                            : 0.0;
+    std::printf("magnitude range: [%.4g, %.4g]  (%.1f decades of dynamic range)\n",
+                static_cast<double>(mr.minPositive), static_cast<double>(mr.max), span);
+
+    // A high density saturates opacity and hides the transfer function, so when the
+    // decade window is engaged but no density was given, use a gentler default that
+    // shows the gradient (linear viewing keeps the denser 2.5).
+    if (decades > 0.0f && !densitySet) {
+        density = 1.0f;
     }
     viewer->setVolume(std::move(*vol));
     viewer->params().background = {0.05f, 0.05f, 0.07f, 1.0f};

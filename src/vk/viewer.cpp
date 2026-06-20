@@ -145,7 +145,9 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
     const bool repeat = (action == GLFW_REPEAT);
     Impl* im = of(w);
     constexpr float kDecadeStep = 0.5f;
+    constexpr float kDecadeMin = 0.5f;  // narrowest useful window
     constexpr float kDecadeMax = 20.0f;
+    constexpr float kDecadeInit = 4.0f; // engage here from "off" (logDecades == 0)
     switch (key) {
     case GLFW_KEY_ESCAPE:
         if (!repeat) {
@@ -167,17 +169,19 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
             im->camera.reset();
         }
         break;
-    case GLFW_KEY_RIGHT_BRACKET: // ] : widen the log decade window (ADR-0027)
-        im->params.logDecades += kDecadeStep;
+    case GLFW_KEY_RIGHT_BRACKET: // ] : more decades (wider window; ADR-0027)
+        im->params.logDecades =
+            im->params.logDecades <= 0.0f ? kDecadeInit : im->params.logDecades + kDecadeStep;
         if (im->params.logDecades > kDecadeMax) {
             im->params.logDecades = kDecadeMax;
         }
         im->params.opacityMode = 1u; // ensure log mode so the change is visible
         break;
-    case GLFW_KEY_LEFT_BRACKET: // [ : narrow the window (toward 0 = full range)
-        im->params.logDecades -= kDecadeStep;
-        if (im->params.logDecades < 0.0f) {
-            im->params.logDecades = 0.0f;
+    case GLFW_KEY_LEFT_BRACKET: // [ : fewer decades (narrower window, emphasizes the peak)
+        im->params.logDecades =
+            im->params.logDecades <= 0.0f ? kDecadeInit : im->params.logDecades - kDecadeStep;
+        if (im->params.logDecades < kDecadeMin) {
+            im->params.logDecades = kDecadeMin;
         }
         im->params.opacityMode = 1u;
         break;

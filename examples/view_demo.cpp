@@ -1,15 +1,20 @@
-// Demo: open the interactive viewer (ADR-0016/0017/0018) on a sample complex
-// field. Left-drag orbits, scroll zooms; keys: Esc quit, L linear/log opacity,
-// C colormap (twilight/HSV), R reset camera.
+// Demo: open the interactive viewer (ADR-0016/0017/0018) on a complex scalar field —
+// either a file you supply or a built-in synthetic vortex. Left-drag orbits, scroll
+// zooms; keys: Esc quit, L linear/log opacity, C colormap (twilight/HSV), R reset.
 //
 // Usage:
-//   iv_view              open the window and run until closed
-//   iv_view --frames N   render N frames then exit (verification; reports
-//                        validation cleanliness) — used to smoke-test the present
-//                        loop on a display without manual interaction.
+//   iv_view                                   built-in 128^3 phase vortex
+//   iv_view --input FILE --dims NX NY NZ      load a dataset (see format below)
+//   iv_view ... --density D                   opacity density scale (default 2.5)
+//   iv_view ... --frames N                    render N frames then exit (smoke test)
 //
-// Example code exercising the public viewer API; not part of libiv, not on the
-// test gate.
+// Input format: a raw, headerless binary file of NX*NY*NZ complex values as
+// interleaved (real, imag) 32-bit floats (i.e. numpy complex64), native-endian, in
+// x-fastest order — element (x,y,z) at index x + NX*(y + NY*z). From numpy:
+//     a.astype(np.complex64).reshape(NZ, NY, NX).tofile("field.bin")   # C-order
+// then: iv_view --input field.bin --dims NX NY NZ
+//
+// Example code exercising the public viewer API; not part of libiv, not on the test gate.
 
 #include "iv/error.hpp"
 #include "iv/vk/viewer.hpp"
@@ -24,9 +29,13 @@
 
 #include <array>
 #include <complex>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace {
@@ -34,7 +43,7 @@ namespace {
 using iv::GridDims;
 
 // f = w·exp(-((z-½)/0.2)²/2) with w = (x-½) + i(y-½): a phase vortex column faded
-// along z (same family as the offscreen demo), 128³.
+// along z (same family as the offscreen demo).
 std::vector<std::complex<float>> buildVortex(GridDims d) {
     std::vector<std::complex<float>> v(d.count());
     for (std::uint32_t z = 0; z < d.nz; ++z) {
@@ -52,14 +61,83 @@ std::vector<std::complex<float>> buildVortex(GridDims d) {
     return v;
 }
 
+// Read NX*NY*NZ interleaved (re,im) float32 values (numpy complex64) into the field.
+// std::complex<float> is two contiguous floats, so the bytes map 1:1. Returns nullopt
+// on open failure or if the file is smaller than expected.
+std::optional<std::vector<std::complex<float>>> loadRawComplex64(const std::string& path,
+                                                                 GridDims d) {
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    if (!f) {
+        return std::nullopt;
+    }
+    const auto need = static_cast<std::streamoff>(d.count() * sizeof(std::complex<float>));
+    if (f.tellg() < need) {
+        return std::nullopt; // file too small for the given dimensions
+    }
+    f.seekg(0);
+    std::vector<std::complex<float>> v(d.count());
+    f.read(reinterpret_cast<char*>(v.data()), need);
+    if (f.gcount() != need) {
+        return std::nullopt;
+    }
+    return v;
+}
+
+std::string baseName(const std::string& p) {
+    const auto slash = p.find_last_of("/\\");
+    return slash == std::string::npos ? p : p.substr(slash + 1);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::uint32_t frames = 0; // 0 => run until the window closes
+    const char* input = nullptr;
+    GridDims dims{128, 128, 128};
+    bool haveDims = false;
+    float density = 2.5f;
+
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             frames = static_cast<std::uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+        } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
+            input = argv[++i];
+        } else if (std::strcmp(argv[i], "--dims") == 0 && i + 3 < argc) {
+            dims.nx = static_cast<std::uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+            dims.ny = static_cast<std::uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+            dims.nz = static_cast<std::uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+            haveDims = true;
+        } else if (std::strcmp(argv[i], "--density") == 0 && i + 1 < argc) {
+            density = std::strtof(argv[++i], nullptr);
         }
+    }
+
+    if (input != nullptr && !haveDims) {
+        std::fprintf(stderr, "--input requires --dims <nx> <ny> <nz>\n");
+        return 1;
+    }
+    if (dims.nx == 0 || dims.ny == 0 || dims.nz == 0) {
+        std::fprintf(stderr, "--dims values must be positive\n");
+        return 1;
+    }
+
+    // Build or load the field before creating the viewer-dependent volume.
+    std::vector<std::complex<float>> field;
+    std::string title;
+    if (input != nullptr) {
+        auto loaded = loadRawComplex64(input, dims);
+        if (!loaded) {
+            std::fprintf(stderr,
+                         "failed to read '%s' as %ux%ux%u complex64 (%zu values, %zu bytes)\n",
+                         input, dims.nx, dims.ny, dims.nz, static_cast<std::size_t>(dims.count()),
+                         static_cast<std::size_t>(dims.count()) * sizeof(std::complex<float>));
+            return 1;
+        }
+        field = std::move(*loaded);
+        title = baseName(input);
+    } else {
+        field = buildVortex(dims);
+        title = "phase vortex";
     }
 
     auto viewer = iv::vk::Viewer::create();
@@ -68,8 +146,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const GridDims dims{128, 128, 128};
-    const auto field = buildVortex(dims);
     auto vol = iv::vk::Volume::create(viewer->context(), field, dims);
     if (!vol) {
         std::fprintf(stderr, "Volume::create failed: %s\n", iv::format(vol.error()).c_str());
@@ -77,7 +153,7 @@ int main(int argc, char** argv) {
     }
     viewer->setVolume(std::move(*vol));
     viewer->params().background = {0.05f, 0.05f, 0.07f, 1.0f};
-    viewer->params().densityScale = 2.5f;
+    viewer->params().densityScale = density;
 
 #ifdef IV_VIEW_TEXT
     // A labeled, camera-tracking plot (ADR-0024/0026): a bounding box with ticked,
@@ -89,10 +165,17 @@ int main(int argc, char** argv) {
         return 1;
     }
     iv::PlotAxes axes;
-    axes.x = iv::Axis{0.0, 1.0, "x", "", {}, {}};
-    axes.y = iv::Axis{0.0, 1.0, "y", "", {}, {}};
-    axes.z = iv::Axis{-1.0, 1.0, "z", "", {}, {}};
-    axes.title = "phase vortex";
+    if (input != nullptr) {
+        // Loaded data: label the axes with voxel-index extents (no physical units known).
+        axes.x = iv::Axis{0.0, static_cast<double>(dims.nx - 1), "x", "", {}, {}};
+        axes.y = iv::Axis{0.0, static_cast<double>(dims.ny - 1), "y", "", {}, {}};
+        axes.z = iv::Axis{0.0, static_cast<double>(dims.nz - 1), "z", "", {}, {}};
+    } else {
+        axes.x = iv::Axis{0.0, 1.0, "x", "", {}, {}};
+        axes.y = iv::Axis{0.0, 1.0, "y", "", {}, {}};
+        axes.z = iv::Axis{-1.0, 1.0, "z", "", {}, {}};
+    }
+    axes.title = title;
     viewer->setOnFrame([&axes, &shaper](iv::vk::Overlay& ov, const iv::vk::RenderParams& cam,
                                         std::uint32_t w, std::uint32_t h) {
         iv::text::buildAnnotations(ov, axes, cam, w, h, *shaper);

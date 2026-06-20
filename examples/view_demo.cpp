@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
         title = "phase vortex";
     }
 
-    auto viewer = iv::vk::Viewer::create();
+    auto viewer = iv::vk::Viewer::create(iv::vk::Viewer::Options{1000u, 1000u});
     if (!viewer) {
         std::fprintf(stderr, "Viewer::create failed: %s\n", iv::format(viewer.error()).c_str());
         return 1;

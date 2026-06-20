@@ -148,6 +148,9 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
     constexpr float kDecadeMin = 0.5f;  // narrowest useful window
     constexpr float kDecadeMax = 20.0f;
     constexpr float kDecadeInit = 4.0f; // engage here from "off" (logDecades == 0)
+    constexpr float kDensityFactor = 1.25f; // multiplicative density step (a scale param)
+    constexpr float kDensityMin = 0.02f;
+    constexpr float kDensityMax = 50.0f;
     switch (key) {
     case GLFW_KEY_ESCAPE:
         if (!repeat) {
@@ -167,6 +170,18 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
     case GLFW_KEY_R: // reset camera (ADR-0018)
         if (!repeat) {
             im->camera.reset();
+        }
+        break;
+    case GLFW_KEY_UP: // increase opacity density (ADR-0013 densityScale)
+        im->params.densityScale *= kDensityFactor;
+        if (im->params.densityScale > kDensityMax) {
+            im->params.densityScale = kDensityMax;
+        }
+        break;
+    case GLFW_KEY_DOWN: // decrease opacity density
+        im->params.densityScale /= kDensityFactor;
+        if (im->params.densityScale < kDensityMin) {
+            im->params.densityScale = kDensityMin;
         }
         break;
     case GLFW_KEY_RIGHT_BRACKET: // ] : more decades (wider window; ADR-0027)

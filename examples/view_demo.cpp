@@ -1,6 +1,7 @@
 // Demo: open the interactive viewer (ADR-0016/0017/0018) on a complex scalar field —
 // either a file you supply or a built-in synthetic vortex. Left-drag orbits, scroll
-// zooms; keys: Esc quit, L linear/log opacity, C colormap (twilight/HSV), R reset.
+// zooms; keys: Esc quit, L linear/log opacity, C colormap (twilight/HSV), R reset,
+// up/down opacity density, [ / ] log decade window (ADR-0027).
 //
 // Usage:
 //   iv_view                                   built-in 128^3 phase vortex

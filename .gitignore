@@ -28,6 +28,10 @@ compile_commands.json
 # Demo output (regenerate with examples/iv_render_demo)
 /gallery/
 
+# Test datasets (heavy raw complex64 volumes; not source) — see HANDOFF "Test data"
+/example_data/
+*.c64
+
 # Editor / OS noise
 .vscode/
 .idea/

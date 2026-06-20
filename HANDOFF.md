@@ -1,8 +1,9 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-19 by the M7 session (Claude / Opus 4.8)
-**Active milestone:** **M7 Complete & locked.** Next: **M8 — Legend/Colorbar &
-High-Level Plot API** (not started; begin at ORIENT → CONTRACT). M1–M7 complete & locked.
+**Last updated:** 2026-06-20 by the M7 / post-M7 session (Claude / Opus 4.8)
+**Active milestone:** **M7 Complete & locked**, plus post-M7 polish (ADR-0027 + viewer
+UX). Next: **M8 — Legend/Colorbar & High-Level Plot API** (not started; begin at ORIENT
+→ CONTRACT). M1–M7 complete & locked.
 
 ## Current State
 **M1–M5 Complete and locked** (MILESTONES.md; CHANGELOG.md): ingest a complex field →
@@ -31,15 +32,36 @@ Three ADRs, three commits, all gates green:
   silhouette-edge labels offset outward); `Viewer::setOnFrame` rebuilds it per frame.
   `iv_view` is now a labeled, navigable plot.
 
-Decisions D-0031…D-0039; Backlog B-0008/B-0010 resolved, B-0007 (resolved by M7),
-B-0009 open. ADR index current (ADR-0001…0026 Accepted). Gates at M7 close: full suite
-**614/59**; ASan+UBSan `ctest` green; text-free / text-off-viewer / GLFW-free builds
+**Post-M7 polish (standalone, committed after the M7 RECORD; CHANGELOG § "Post-M7"):**
+- **ADR-0027** (91093f0, Accepted; extends ADR-0013; D-0041) — **log-scale decade
+  window**: public `RenderParams::logDecades` (default 0 = full range); in log mode
+  `>0` windows the ramp to the top N decades below `max`
+  (`mn = clamp(1+log10(m/max)/N, 0,1)`). Packed into a spare UBO `modes` slot
+  (`bit_cast`/`uintBitsToFloat`); live, no re-upload. Renderer test + teeth.
+- **Viewer/demo UX** (be5883d, fea6e08, 08d6d77, 8cb1edf, 25ca7fc, 0f2d9d6, 2c02c66):
+  smooth (AA) overlay lines via `VK_EXT_line_rasterization` (D-0040,
+  `Context::smoothLinesAvailable()`); per-label sizes (title 1.5×/axis 1.3× tick,
+  size-independent atlas); `iv_view` dataset loading (`--input FILE --dims NX NY NZ`,
+  raw complex64 / x-fastest), `--density`, `--decades` (prints the data's decade span;
+  gentler density when windowing); hotkeys **↑/↓ density**, **←/→ decade window**;
+  1000×1000 window. **All demo/UX — no library contract change beyond ADR-0027.**
+
+Decisions D-0031…D-0041; Backlog B-0008/B-0010 resolved, B-0007 (resolved by M7),
+B-0009 open. ADR index current (ADR-0001…0027 Accepted). Gates now: full suite
+**631/61**; ASan+UBSan `ctest` green; text-free / text-off-viewer / GLFW-free builds
 green; no HarfBuzz type in any public header; `iv_view --frames` (annotated)
 validation-clean.
 
+## Test data (gitignored)
+`example_data/` (NOT tracked — `.gitignore`: `/example_data/`, `*.c64`): 11 heavy raw
+**complex64** volumes from QM wavefunction-scattering models (`wf1.c64`…`wf11.c64`,
+27 MB each). Each is **150³** (27,000,000 bytes ÷ 8 = 3,375,000 = 150³), x-fastest, so:
+`iv_view --input example_data/wf1.c64 --dims 150 150 150` (add `--decades`/`--density`
+to taste). Good real datasets for eyeballing M8's legend/colorbar.
+
 ## In Flight (work started, not finished)
-**Nothing in flight.** M7 is closed; M8 has not started. Working tree is clean at
-`d305381` (ADR-0026) + the M7 RECORD commit.
+**Nothing in flight.** M7 + post-M7 polish are closed; M8 has not started. Working tree
+is clean at `2c02c66` (the latest post-M7 commit) + this housekeeping commit.
 
 ## Next Action (begin M8)
 **Start M8 — Legend/Colorbar & High-Level Plot API** at ORIENT → CONTRACT (DEV_PROCESS
@@ -49,7 +71,8 @@ magnitude→opacity scale, with labeled bounds, matching the ADR-0013 transfer f
 two-step volume/viewer setup. Reuse: the ADR-0021 overlay (lines/triangles/glyphs) for
 the colorbar swatch + labels, `iv::text::buildAnnotations`/`appendText` for legend
 text, `iv::PlotAxes`-style declarative options. Write the M8 ADRs (Proposed → Accepted
-gate) before implementing. LaTeX math is still deferred.
+gate) before implementing. LaTeX math is still deferred. Eyeball results on the real
+`example_data/` volumes (see "Test data") — they exercise the magnitude/phase legend.
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.
@@ -154,7 +177,10 @@ gate) before implementing. LaTeX math is still deferred.
   `iv_tests` (no HarfBuzz; the `[text]` suite is excluded). Text tests: `[text]`.
 - Viewer (needs a display; `DISPLAY=:1` here): `cmake --build build/debug --target
   iv_view` then `DISPLAY=:1 ./build/debug/iv_view` (interactive) or `… --frames N`
-  (renders N frames, reports validation cleanliness, exits).
+  (renders N frames, reports validation cleanliness, exits). Flags: `--input FILE
+  --dims NX NY NZ` (raw complex64, x-fastest), `--density D`, `--decades N`. Keys:
+  drag orbit, scroll zoom, `L` lin/log, `C` colormap, `R` reset, `↑/↓` density,
+  `←/→` decade window, `Esc` quit.
 - Benchmark (RTX 4070; build Release for a fair number): `cmake -S . -B build/release
   -DCMAKE_BUILD_TYPE=Release` → `./build/release/iv_bench` (knobs: `--frames N`,
   `--step-mult K`, `--no-early-term`, `--advisory`).
@@ -164,10 +190,10 @@ gate) before implementing. LaTeX math is still deferred.
 ## Pointers
 - Governing process: `DEV_PROCESS.md`.
 - Milestone arc: `MILESTONES.md` (M1–M7 complete & locked; M8 next).
-- Contracts: `docs/adr/INDEX.md` — ADR-0001…0026 Accepted (ADR-0009 superseded by
-  ADR-0015).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0039), Backlog B-0001…B-0010.
-- M1–M7 work + teeth: `CHANGELOG.md`.
+- Contracts: `docs/adr/INDEX.md` — ADR-0001…0027 Accepted (ADR-0009 superseded by
+  ADR-0015; ADR-0020/0027 extend ADR-0013).
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0041), Backlog B-0001…B-0010.
+- M1–M7 + post-M7 work + teeth: `CHANGELOG.md` (incl. the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs via the owned
   `examples/png.hpp`, D-0024; gitignored `gallery/`); `iv_view` (interactive
   viewer); `iv_bench` (perf).

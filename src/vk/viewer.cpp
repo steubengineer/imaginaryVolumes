@@ -184,7 +184,7 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
             im->params.densityScale = kDensityMin;
         }
         break;
-    case GLFW_KEY_RIGHT_BRACKET: // ] : more decades (wider window; ADR-0027)
+    case GLFW_KEY_RIGHT: // right arrow: more decades (wider window; ADR-0027)
         im->params.logDecades =
             im->params.logDecades <= 0.0f ? kDecadeInit : im->params.logDecades + kDecadeStep;
         if (im->params.logDecades > kDecadeMax) {
@@ -192,7 +192,7 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
         }
         im->params.opacityMode = 1u; // ensure log mode so the change is visible
         break;
-    case GLFW_KEY_LEFT_BRACKET: // [ : fewer decades (narrower window, emphasizes the peak)
+    case GLFW_KEY_LEFT: // left arrow: fewer decades (narrower window, emphasizes the peak)
         im->params.logDecades =
             im->params.logDecades <= 0.0f ? kDecadeInit : im->params.logDecades - kDecadeStep;
         if (im->params.logDecades < kDecadeMin) {

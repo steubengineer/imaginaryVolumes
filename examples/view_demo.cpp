@@ -1,7 +1,7 @@
 // Demo: open the interactive viewer (ADR-0016/0017/0018) on a complex scalar field —
 // either a file you supply or a built-in synthetic vortex. Left-drag orbits, scroll
 // zooms; keys: Esc quit, L linear/log opacity, C colormap (twilight/HSV), R reset,
-// up/down opacity density, [ / ] log decade window (ADR-0027).
+// up/down opacity density, left/right log decade window (ADR-0027).
 //
 // Usage:
 //   iv_view                                   built-in 128^3 phase vortex
@@ -11,8 +11,8 @@
 //                                             magnitude (ADR-0027); meaningful when N <
 //                                             the data's decade span (printed on load).
 //                                             Uses a gentler density unless --density is
-//                                             given. Adjust live with [ and ] (which
-//                                             engage the window at 4 decades from off).
+//                                             given. Adjust live with the left/right
+//                                             arrows (which engage at 4 decades from off).
 //   iv_view ... --frames N                    render N frames then exit (smoke test)
 //
 // Input format: a raw, headerless binary file of NX*NY*NZ complex values as

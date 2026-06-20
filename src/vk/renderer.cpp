@@ -8,6 +8,7 @@
 #include "iv/vk/shaders.hpp"
 
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -44,7 +45,7 @@ struct Ubo {
     float background[4];
     float range[4];           // minPositive, max, densityScale, alphaTermination
     std::uint32_t ints[4];    // width, height, stepCount, opacityMode
-    std::uint32_t modes[4];   // colormapMode, pad, pad, pad
+    std::uint32_t modes[4];   // colormapMode, logDecades (float bits, ADR-0027), pad, pad
 };
 static_assert(sizeof(Ubo) == 128, "Ubo must match the std140 layout in ray_march.comp");
 
@@ -88,6 +89,7 @@ Ubo fillUbo(const RenderParams& params, std::uint32_t width, std::uint32_t heigh
     data.ints[2] = params.stepCount;
     data.ints[3] = params.opacityMode;
     data.modes[0] = params.colormapMode;
+    data.modes[1] = std::bit_cast<std::uint32_t>(params.logDecades); // ADR-0027 (uintBitsToFloat)
     return data;
 }
 

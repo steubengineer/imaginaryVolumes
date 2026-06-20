@@ -38,6 +38,11 @@ struct RenderParams {
     // Opacity transfer function (ADR-0013): 0 = linear, 1 = logarithmic.
     std::uint32_t opacityMode{0};
     float densityScale{1.0f};
+    // Log-mode decade window (ADR-0027): when > 0, the log opacity ramp spans the top
+    // `logDecades` decades below the max magnitude (`max·10^-logDecades` → transparent,
+    // `max` → opaque). 0 (default) = the full ADR-0013 [minPositive, max] range. No
+    // effect in linear mode.
+    float logDecades{0.0f};
     // Phase colormap (ADR-0014): 0 = perceptually-uniform LUT, 1 = HSV hue wheel.
     std::uint32_t colormapMode{0};
 };

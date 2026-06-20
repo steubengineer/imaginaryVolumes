@@ -6,6 +6,9 @@
 //   iv_view                                   built-in 128^3 phase vortex
 //   iv_view --input FILE --dims NX NY NZ      load a dataset (see format below)
 //   iv_view ... --density D                   opacity density scale (default 2.5)
+//   iv_view ... --decades N                   log mode showing the top N decades of
+//                                             magnitude (ADR-0027); 0 = full range.
+//                                             Adjust live with [ and ].
 //   iv_view ... --frames N                    render N frames then exit (smoke test)
 //
 // Input format: a raw, headerless binary file of NX*NY*NZ complex values as
@@ -96,6 +99,7 @@ int main(int argc, char** argv) {
     GridDims dims{128, 128, 128};
     bool haveDims = false;
     float density = 2.5f;
+    float decades = 0.0f; // ADR-0027: log decade window (0 = full range)
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
@@ -109,6 +113,8 @@ int main(int argc, char** argv) {
             haveDims = true;
         } else if (std::strcmp(argv[i], "--density") == 0 && i + 1 < argc) {
             density = std::strtof(argv[++i], nullptr);
+        } else if (std::strcmp(argv[i], "--decades") == 0 && i + 1 < argc) {
+            decades = std::strtof(argv[++i], nullptr);
         }
     }
 
@@ -154,6 +160,10 @@ int main(int argc, char** argv) {
     viewer->setVolume(std::move(*vol));
     viewer->params().background = {0.05f, 0.05f, 0.07f, 1.0f};
     viewer->params().densityScale = density;
+    viewer->params().logDecades = decades;
+    if (decades > 0.0f) {
+        viewer->params().opacityMode = 1; // log mode, so the decade window is visible
+    }
 
 #ifdef IV_VIEW_TEXT
     // A labeled, camera-tracking plot (ADR-0024/0026): a bounding box with ticked,

@@ -31,3 +31,4 @@
 | [ADR-0024](0024-plot-coordinate-model-and-axis-api.md) | Plot Coordinate Model, Declarative Axis/Label API & Tick Generation | Accepted | — |
 | [ADR-0025](0025-present-path-glyph-rendering.md) | Present-Path (Viewer) Glyph Rendering | Accepted | — |
 | [ADR-0026](0026-world-space-scene-annotations.md) | World-Space Scene Annotations — Bounding Box, Ticked Axes & Labels | Accepted | — |
+| [ADR-0027](0027-log-scale-decade-window.md) | Log-Scale Decade Window for the Opacity Transfer Function | Accepted | — |

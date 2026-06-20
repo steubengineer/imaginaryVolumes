@@ -21,7 +21,7 @@ layout(set = 0, binding = 2, std140) uniform Params {
     vec4 background;   // rgba background (ADR-0012)
     vec4 range;        // x=minPositive, y=max, z=densityScale, w=alphaTermination
     uvec4 ints;        // x=width, y=height, z=stepCount, w=opacityMode(0 lin,1 log)
-    uvec4 modes;       // x=colormapMode (0 LUT,1 HSV)
+    uvec4 modes;       // x=colormapMode (0 LUT,1 HSV); y=logDecades float bits (ADR-0027)
 } P;
 
 const float PI = 3.14159265358979323846;
@@ -43,8 +43,13 @@ float sampleOpacity(float m) {
         if (maxM > 0.0) {
             mn = clamp(m / maxM, 0.0, 1.0);
         }
-    } else {                              // logarithmic
-        if (m > minP && maxM > minP) {
+    } else {                              // logarithmic (ADR-0013/0027)
+        float decades = uintBitsToFloat(P.modes.y);
+        if (decades > 0.0) {              // ADR-0027: window the top `decades` below max
+            if (m > 0.0 && maxM > 0.0) {  // mn = 1 + log10(m/max)/decades
+                mn = clamp(1.0 + (log(m) - log(maxM)) / (decades * 2.302585093), 0.0, 1.0);
+            }
+        } else if (m > minP && maxM > minP) { // ADR-0013: full [minPositive, max] range
             mn = clamp((log(m) - log(minP)) / (log(maxM) - log(minP)), 0.0, 1.0);
         }
     }

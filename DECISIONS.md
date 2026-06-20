@@ -10,6 +10,23 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0041 — Log-scale decade window for the opacity transfer function
+- **Date / milestone:** 2026-06-19 / post-M7 (standalone) — maintainer decision
+- **Choice:** Let the caller control how many decades of magnitude the logarithmic
+  opacity scale displays (ADR-0013 windowed it over the data's full
+  `[minPositive, max]` range, so the decade count was fixed by the data).
+- **Decision:** Add public `RenderParams::logDecades` (float, default 0). In log mode,
+  `> 0` windows the ramp to the top `logDecades` decades below `max`
+  (`mn = clamp(1 + log10(m/max)/logDecades, 0, 1)`); `0` keeps the unchanged ADR-0013
+  mapping (backward-compatible). Packed into a spare `modes` UBO slot (no std140/size
+  change); live (no re-upload). Demo: `--decades N`; viewer: `[`/`]` hotkeys (repeat),
+  which also switch to log mode.
+- **Rationale:** High-dynamic-range fields compress the interesting top end under the
+  full-range log map; a data-independent decade window is the maintainer's mental model.
+- **Contract impact:** ADR-0027 (Accepted; extends ADR-0013).
+- **Deferred alternatives:** per-decade gamma; a movable window center (anchored at
+  `max` for now); absolute-floor windowing.
+
 ### D-0040 — Anti-aliased overlay lines via VK_EXT_line_rasterization (smooth)
 - **Date / milestone:** 2026-06-19 / post-M7 graphics polish
 - **Choice:** How to eliminate aliasing on the overlay's box/axis/tick lines (the

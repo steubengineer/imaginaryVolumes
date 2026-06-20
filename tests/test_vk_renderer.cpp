@@ -46,6 +46,22 @@ std::vector<std::complex<float>> zSplitField(GridDims d, float mag, float phaseH
     return v;
 }
 
+// Magnitude graded over z as 10^(span·z/(nz-1)) (phase 0): spans 1 .. 10^span, so
+// `span` decades of dynamic range. For the ADR-0027 log-decade-window tests.
+std::vector<std::complex<float>> gradedMagField(GridDims d, float span) {
+    std::vector<std::complex<float>> v(d.count());
+    for (std::uint32_t z = 0; z < d.nz; ++z) {
+        const float t = d.nz > 1 ? static_cast<float>(z) / static_cast<float>(d.nz - 1) : 0.0f;
+        const float mag = std::pow(10.0f, span * t);
+        for (std::uint32_t y = 0; y < d.ny; ++y) {
+            for (std::uint32_t x = 0; x < d.nx; ++x) {
+                v[d.index(x, y, z)] = std::polar(mag, 0.0f);
+            }
+        }
+    }
+    return v;
+}
+
 // f = w = (x-0.5) + i(y-0.5): phase = azimuth (sweeps the full ±pi range,
 // crossing the branch cut), magnitude = radius. z-independent.
 std::vector<std::complex<float>> vortexField(GridDims d) {
@@ -155,6 +171,88 @@ TEST_CASE("Renderer: log opacity on a uniform (degenerate-range) field is transp
     CHECK(near8(center.r, 64));
     CHECK(near8(center.g, 64));
     CHECK(near8(center.b, 64));
+    CHECK(ctx->validationClean());
+}
+
+// teeth (ADR-0027 log decade window): the same uniform field that log mode renders
+// transparent (degenerate [minPositive==max] range, decades=0) becomes fully opaque
+// with a decade window, because the window is anchored at `max` (m==max -> mn=1).
+// Removing the ADR-0027 branch makes the decades=4 case fall back to transparent.
+TEST_CASE("Renderer: log decade window makes a uniform field opaque (ADR-0027)",
+          "[vk][renderer]") {
+    auto ctx = Context::create();
+    REQUIRE(ctx.has_value());
+    auto rend = Renderer::create(*ctx);
+    REQUIRE(rend.has_value());
+
+    const GridDims d{8, 8, 8};
+    auto vol = Volume::create(*ctx, uniformField(d, 1.0f, 0.0f), d); // m == max == 1
+    REQUIRE(vol.has_value());
+
+    RenderParams p;
+    p.opacityMode = 1;  // logarithmic
+    p.colormapMode = 1; // HSV; phase 0 -> cyan
+    p.background = {0.25f, 0.25f, 0.25f, 1.0f};
+
+    // decades = 0: the ADR-0013 [minPositive, max] range is degenerate -> transparent.
+    p.logDecades = 0.0f;
+    auto off = rend->render(*vol, 64, 64, p);
+    REQUIRE(off.has_value());
+    CHECK(near8(off->at(32, 32).r, 64)); // background
+
+    // decades = 4: m == max -> mn = 1 -> opaque -> the phase color (cyan).
+    p.logDecades = 4.0f;
+    auto on = rend->render(*vol, 64, 64, p);
+    REQUIRE(on.has_value());
+    const auto c = on->at(32, 32);
+    CHECK(near8(c.r, 0));
+    CHECK(near8(c.g, 255));
+    CHECK(near8(c.b, 255));
+    CHECK(ctx->validationClean());
+}
+
+// A wider decade window admits more of a graded field (the low-magnitude part the
+// narrow window clips), so it composites brighter. teeth: a wrong window (or reverting
+// the formula) breaks the ordering.
+TEST_CASE("Renderer: a wider log decade window shows more of a graded field (ADR-0027)",
+          "[vk][renderer]") {
+    auto ctx = Context::create();
+    REQUIRE(ctx.has_value());
+    auto rend = Renderer::create(*ctx);
+    REQUIRE(rend.has_value());
+
+    const GridDims d{16, 16, 16};
+    auto vol = Volume::create(*ctx, gradedMagField(d, 2.0f), d); // magnitudes 1 .. 100
+    REQUIRE(vol.has_value());
+
+    RenderParams p;
+    p.opacityMode = 1;
+    p.colormapMode = 1;
+    p.densityScale = 0.1f; // partial alpha so the window width is visible (not saturated)
+    p.background = {0.0f, 0.0f, 0.0f, 1.0f};
+
+    const auto totalBrightness = [](const iv::vk::ImageReadback& img) {
+        long s = 0;
+        for (std::uint32_t y = 0; y < img.height(); ++y) {
+            for (std::uint32_t x = 0; x < img.width(); ++x) {
+                const auto c = img.at(x, y);
+                s += static_cast<long>(c.r) + c.g + c.b;
+            }
+        }
+        return s;
+    };
+
+    p.logDecades = 1.0f; // only the top decade [10, 100]
+    auto narrow = rend->render(*vol, 64, 64, p);
+    REQUIRE(narrow.has_value());
+    p.logDecades = 4.0f; // the whole field (and below) maps in
+    auto wide = rend->render(*vol, 64, 64, p);
+    REQUIRE(wide.has_value());
+
+    const long sNarrow = totalBrightness(*narrow);
+    const long sWide = totalBrightness(*wide);
+    INFO("narrow(1 decade)=" << sNarrow << " wide(4 decades)=" << sWide);
+    CHECK(sWide > sNarrow);
     CHECK(ctx->validationClean());
 }
 

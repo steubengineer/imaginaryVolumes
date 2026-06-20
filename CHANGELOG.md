@@ -4,6 +4,28 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M7 — Standalone Enhancements
+
+Small, ADR-governed enhancements between milestones (not a milestone themselves).
+
+- **Log-scale decade window** (ADR-0027, extends ADR-0013; D-0041): public
+  `RenderParams::logDecades` (float, default 0). In log mode, `> 0` windows the opacity
+  ramp to the top `logDecades` decades below `max`
+  (`mn = clamp(1 + log10(m/max)/logDecades, 0, 1)`); `0` is the unchanged ADR-0013 map.
+  Packed into a spare UBO slot (no layout change); live in the viewer (`--decades N`;
+  `[`/`]` hotkeys). **Teeth:** a uniform field that log mode renders transparent
+  (degenerate range, decades=0) becomes opaque at decades=4 (`m==max → mn=1`), and a
+  wider window admits more of a graded field (brighter); disabling the ADR-0027 branch
+  reverts both → red. Full suite **631/61**; ASan+UBSan green.
+- **Smooth (anti-aliased) overlay lines** (D-0040): `Context` opportunistically enables
+  `VK_EXT_line_rasterization` + `smoothLines`; the overlay line pipeline uses
+  `eRectangularSmooth` (graceful fallback). Plus label polish: per-label sizes (title
+  1.5×, axis 1.3× tick labels, via a size-independent atlas), larger tick-label margins,
+  and a default of 1 minor tick between majors.
+- **Viewer dataset loading & controls:** `iv_view --input FILE --dims NX NY NZ`
+  (raw interleaved-`(re,im)` float32 / numpy complex64, x-fastest), `--density`, and the
+  inverted mouse-drag orbit direction. Demo-only.
+
 ## M7 — Bounding Box, Ticked Axes & Labels
 
 **Status:** Complete (2026-06-19).

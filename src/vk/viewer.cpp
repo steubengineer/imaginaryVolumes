@@ -138,22 +138,48 @@ void Viewer::Impl::onScroll(GLFWwindow* w, double /*xoff*/, double yoff) {
 }
 
 void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, int /*mods*/) {
-    if (action != GLFW_PRESS) {
+    // Toggles fire on press only; the decade-window keys ([ ]) also repeat (hold to ramp).
+    if (action != GLFW_PRESS && action != GLFW_REPEAT) {
         return;
     }
+    const bool repeat = (action == GLFW_REPEAT);
     Impl* im = of(w);
+    constexpr float kDecadeStep = 0.5f;
+    constexpr float kDecadeMax = 20.0f;
     switch (key) {
     case GLFW_KEY_ESCAPE:
-        glfwSetWindowShouldClose(w, GLFW_TRUE);
+        if (!repeat) {
+            glfwSetWindowShouldClose(w, GLFW_TRUE);
+        }
         break;
     case GLFW_KEY_L: // toggle linear/log opacity (ADR-0013)
-        im->params.opacityMode ^= 1u;
+        if (!repeat) {
+            im->params.opacityMode ^= 1u;
+        }
         break;
     case GLFW_KEY_C: // toggle LUT/HSV colormap (ADR-0014)
-        im->params.colormapMode ^= 1u;
+        if (!repeat) {
+            im->params.colormapMode ^= 1u;
+        }
         break;
     case GLFW_KEY_R: // reset camera (ADR-0018)
-        im->camera.reset();
+        if (!repeat) {
+            im->camera.reset();
+        }
+        break;
+    case GLFW_KEY_RIGHT_BRACKET: // ] : widen the log decade window (ADR-0027)
+        im->params.logDecades += kDecadeStep;
+        if (im->params.logDecades > kDecadeMax) {
+            im->params.logDecades = kDecadeMax;
+        }
+        im->params.opacityMode = 1u; // ensure log mode so the change is visible
+        break;
+    case GLFW_KEY_LEFT_BRACKET: // [ : narrow the window (toward 0 = full range)
+        im->params.logDecades -= kDecadeStep;
+        if (im->params.logDecades < 0.0f) {
+            im->params.logDecades = 0.0f;
+        }
+        im->params.opacityMode = 1u;
         break;
     default:
         break;

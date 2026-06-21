@@ -4,6 +4,57 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## M8 — Legend/Colorbar & High-Level Plot API
+
+**Status:** Complete (2026-06-20).
+**Governing ADRs:** ADR-0028 (legend for the phase × magnitude transfer function; extends
+ADR-0021, mirrors ADR-0013/0014/0027), ADR-0029 (high-level `makePlot`/`renderPlot` facade).
+Decisions D-0042…D-0044.
+
+### Added
+- **Host transfer evaluators** (ADR-0028; `include/iv/transfer.hpp`, `src/transfer.cpp`; pure
+  host, core `iv`): `phaseColor(phase, colormapMode)` mirrors the shader's arg→color (ADR-0014;
+  mode 0 samples the *same* committed `kTwilightLut` as the GPU, mode 1 the analytic HSV);
+  `transferNormalized(m, range, opacityMode, logDecades)` → mn ∈ [0,1] and `transferOpacity(…,
+  densityScale, …)` mirror the shader's abs→opacity (ADR-0013/0027, pre-dt-correction). The
+  single source of truth any host depiction of the transfer function draws through.
+- **Screen-space overlay channels** (ADR-0028, extends ADR-0021): `Overlay::screenLines` /
+  `screenTriangles` (Vulkan clip y-down, identity transform; D-0044), drawn after the
+  world-space geometry in both `render()` and `recordFrame()`, so a 2-D HUD (the legend) and
+  the 3-D box/axes coexist in one Overlay.
+- **Legend** (ADR-0028; `include/iv/legend.hpp` `iv::LegendSpec`, core `iv`;
+  `iv::text::buildLegend`, `src/text/legend_builder.cpp`, `iv_text`): a 2-D swatch — phase
+  (−π…+π) across, magnitude→opacity up — with a border, bottom phase ticks (−π, 0, π),
+  nice-number magnitude ticks (right) placed by `transferNormalized`, and labels. Colors/alphas
+  come only through the host evaluators, so the legend cannot drift from the render. Appends to
+  the overlay (composes with `buildAnnotations`).
+- **High-level facade** (ADR-0029; `include/iv/plot.hpp`): `iv::PlotOptions` holds the transfer
+  state once, fanned out to both the RenderParams and the LegendSpec. `renderPlot` (headless →
+  labeled `ImageReadback`; in `iv_text`, needs text not GLFW) and `makePlot` (returns a
+  configured Viewer; new `iv_plot` target, needs viewer + text) installing a per-frame closure
+  that rebuilds box/axes + legend from the LIVE params (so hotkeys update the legend). `iv_view`
+  now builds its labeled plot via `makePlot`.
+
+### Verification (teeth)
+- **Transfer evaluators** (ADR-0028; `[transfer]`): colormap seam/periodicity, the
+  committed-LUT anchor (θ=0 → lerp of twilight entries 127/128), HSV anchors, and every opacity
+  branch (linear / log-full / decade-window / degenerate). **Teeth** — a wrong LUT texel offset
+  (`+0.5` vs `−0.5`) reddens the committed-LUT anchor.
+- **Legend ↔ shader colormap cross-check** (ADR-0028; `[vk][renderer]`): a saturated uniform
+  field over black renders ≈ `phaseColor` for several phases in both colormap modes. **Teeth** —
+  perturbing `phaseColor` / the LUT diverges the host prediction from the GPU render → red.
+- **Legend render** (ADR-0028; `[legend]`, `[vk][legend]`): the swatch populates the screen
+  channels + labels; the rendered swatch is opaque cyan at the top (high magnitude, θ=0) and
+  dark at the bottom (transparent). **Teeth** — a constant-alpha swatch makes the bottom opaque,
+  reddening the opacity-gradient checks (host `minA==0` and the GPU bottom-dark).
+- **Facade** (ADR-0029; `[vk][plot]`): a `renderPlot` image differs from a bare-volume render by
+  the overlay pixels (box/legend); the legend swatch and the volume show the same hue for the
+  same phase (single source). **Teeth** — not building the overlay collapses the diff → red.
+  `makePlot` is exercised by `iv_view --frames` (validation-CLEAN on the vortex and a 150³ set).
+- **Gates:** full suite **738/74**; ASan+UBSan `ctest` green; GLFW-free (renderPlot present,
+  makePlot absent) **738/74**; text-free (transfer core, no HarfBuzz) **565/57**; no HarfBuzz
+  type in any public header; `iv_view` (via makePlot) validation-CLEAN.
+
 ## Post-M7 — Standalone Enhancements
 
 Small, ADR-governed enhancements between milestones (not a milestone themselves).

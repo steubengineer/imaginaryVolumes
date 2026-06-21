@@ -1,207 +1,152 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-20 by the M7 / post-M7 session (Claude / Opus 4.8)
-**Active milestone:** **M7 Complete & locked**, plus post-M7 polish (ADR-0027 + viewer
-UX). Next: **M8 — Legend/Colorbar & High-Level Plot API** (not started; begin at ORIENT
-→ CONTRACT). M1–M7 complete & locked.
+**Last updated:** 2026-06-20 by the M8 session (Claude / Opus 4.8)
+**Active milestone:** **M8 Complete & locked.** With it the founding milestone arc
+**M1–M8 is complete** — the "usable scientific plotting library" goal is met. Next work is
+a maintainer-driven **legend visual-polish pass** and the open Backlog; a new milestone (if
+any) starts at ORIENT → CONTRACT.
 
 ## Current State
-**M1–M5 Complete and locked** (MILESTONES.md; CHANGELOG.md): ingest a complex field →
-3D RG32F texture → compute ray-march → offscreen readback **and** interactive GLFW
-viewer, with a perf benchmark (15.3 ms / ~65 FPS @ 512³→720p on the RTX 4070).
+The library does the full job end to end: ingest a complex field (`std::complex<float|
+double>` + `GridDims`, x-fastest) → a 3D RG32F texture → a compute ray-march (abs→opacity
+ADR-0013/0020/0027, arg→colormap ADR-0014) → offscreen readback **and** an interactive GLFW
+viewer, with a perf contract (15.3 ms / ~65 FPS @ 512³→720p on the RTX 4070). Over that:
+crisp Unicode text (vendored HarfBuzz + Slug GPU glyphs, M6), a world-space bounding box +
+ticked, labeled axes (M7), a **phase × magnitude legend** (M8), and a **one-call facade**
+(M8). All M1–M8 complete & locked (MILESTONES.md; CHANGELOG.md).
 
-**M6 (text & annotation foundation) is Complete & locked** (CHANGELOG.md § M6):
-opacity correction (ADR-0020), the 2D overlay substrate / first graphics pipeline
-(ADR-0021), vendored **HarfBuzz** + `iv::text::Shaper` + bundled **New Computer
-Modern** GFL face (ADR-0022), and **Slug** GPU glyph rendering (ADR-0023, headless).
-Decisions D-0031…D-0036.
+**M8 (legend/colorbar & high-level plot API) — Complete & locked** (CHANGELOG § M8). Two ADRs:
+- **ADR-0028** (84c5950) — **legend**. Pure-host transfer evaluators (`include/iv/transfer.hpp`:
+  `phaseColor`, `transferNormalized`, `transferOpacity`) mirror the shader's arg→color /
+  abs→opacity and are the single source the legend draws through (mode-0 colormap shares the
+  committed `kTwilightLut` with the GPU). `Overlay` gained screen-space `screenLines/
+  screenTriangles` (identity transform, Vulkan clip y-down — **D-0044**), drawn in both paths.
+  `iv::LegendSpec` (core `iv`) + `iv::text::buildLegend` (`iv_text`) draw a **2-D swatch**
+  (phase across, opacity up) + border + −π/0/π phase ticks + nice-number magnitude ticks +
+  labels; it **appends** so it composes with `buildAnnotations`.
+- **ADR-0029** (64e8c2d) — **facade**. `iv::PlotOptions` (single source of transfer state);
+  `iv::renderPlot` (headless → labeled image; in `iv_text`) and `iv::makePlot` (returns a
+  configured, not-yet-running `Viewer`; new **`iv_plot`** target, needs viewer + text). `iv_view`
+  now builds its labeled plot via `makePlot`; the per-frame closure rebuilds box/axes + legend
+  from the LIVE params so hotkeys update the legend. Decisions D-0042…D-0044.
 
-**M7 (bounding box, ticked axes & labels) is Complete & locked** (CHANGELOG.md § M7).
-Three ADRs, three commits, all gates green:
-- **ADR-0024** (ec9035b) — declarative **`iv::PlotAxes`** model (pure host, core `iv`:
-  `include/iv/plot_axes.hpp`): per-axis `{min,max,label,unit, counts?}` in data units,
-  visibility toggles, `BoxTickStyle`, `ThroughAxis`; nice `{1,2,5}` major+minor
-  `ticksFor`, value-only `formatTick`.
-- **ADR-0025** (8f19540) — **present-path glyph rendering**: `recordFrame` draws
-  `Overlay::glyphs` (persistent, grown-on-demand `ensureFrameGlyphResources`; atlas
-  rebuilt on growth, vertices re-uploaded each frame, D-0038). `drawOverlay` takes
-  glyph handles. Resolves B-0010; the viewer shows text.
-- **ADR-0026** (d305381) — **world-space annotations**: `iv::vk::viewProjection` (core
-  `iv`, matches the ADR-0012 ray camera) via `Overlay::transform`; `iv::text::
-  buildAnnotations` fills an Overlay (box + silhouette/all-faces ticks + through-axes +
-  silhouette-edge labels offset outward); `Viewer::setOnFrame` rebuilds it per frame.
-  `iv_view` is now a labeled, navigable plot.
-
-**Post-M7 polish (standalone, committed after the M7 RECORD; CHANGELOG § "Post-M7"):**
-- **ADR-0027** (91093f0, Accepted; extends ADR-0013; D-0041) — **log-scale decade
-  window**: public `RenderParams::logDecades` (default 0 = full range); in log mode
-  `>0` windows the ramp to the top N decades below `max`
-  (`mn = clamp(1+log10(m/max)/N, 0,1)`). Packed into a spare UBO `modes` slot
-  (`bit_cast`/`uintBitsToFloat`); live, no re-upload. Renderer test + teeth.
-- **Viewer/demo UX** (be5883d, fea6e08, 08d6d77, 8cb1edf, 25ca7fc, 0f2d9d6, 2c02c66):
-  smooth (AA) overlay lines via `VK_EXT_line_rasterization` (D-0040,
-  `Context::smoothLinesAvailable()`); per-label sizes (title 1.5×/axis 1.3× tick,
-  size-independent atlas); `iv_view` dataset loading (`--input FILE --dims NX NY NZ`,
-  raw complex64 / x-fastest), `--density`, `--decades` (prints the data's decade span;
-  gentler density when windowing); hotkeys **↑/↓ density**, **←/→ decade window**;
-  1000×1000 window. **All demo/UX — no library contract change beyond ADR-0027.**
-
-Decisions D-0031…D-0041; Backlog B-0008/B-0010 resolved, B-0007 (resolved by M7),
-B-0009 open. ADR index current (ADR-0001…0027 Accepted). Gates now: full suite
-**631/61**; ASan+UBSan `ctest` green; text-free / text-off-viewer / GLFW-free builds
-green; no HarfBuzz type in any public header; `iv_view --frames` (annotated)
-validation-clean.
+Decisions D-0001…D-0044; Backlog B-0005 (more colormaps), B-0006 (VMA), B-0009 (LICENSE),
+B-0011 (log-spaced legend ticks) open; B-0007/0008/0010 resolved. ADR index current
+(**ADR-0001…0029 Accepted**; 0009 superseded by 0015). Gates: full suite **738/74**;
+ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **738/74**;
+text-free (transfer core, no HarfBuzz) **565/57**; no HarfBuzz type in any public header;
+`iv_view` (via makePlot) validation-CLEAN on the vortex and a 150³ dataset.
 
 ## Test data (gitignored)
 `example_data/` (NOT tracked — `.gitignore`: `/example_data/`, `*.c64`): 11 heavy raw
-**complex64** volumes from QM wavefunction-scattering models (`wf1.c64`…`wf11.c64`,
-27 MB each). Each is **150³** (27,000,000 bytes ÷ 8 = 3,375,000 = 150³), x-fastest, so:
-`iv_view --input example_data/wf1.c64 --dims 150 150 150` (add `--decades`/`--density`
-to taste). Good real datasets for eyeballing M8's legend/colorbar.
+**complex64** volumes from QM wavefunction-scattering models (`wf1.c64`…`wf11.c64`, 27 MB
+each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 --dims 150 150
+150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** M7 + post-M7 polish are closed; M8 has not started. Working tree
-is clean at `2c02c66` (the latest post-M7 commit) + this housekeeping commit.
+**Nothing in flight.** M8 is closed; the working tree is clean at the M8 commits.
 
-## Next Action (begin M8)
-**Start M8 — Legend/Colorbar & High-Level Plot API** at ORIENT → CONTRACT (DEV_PROCESS
-§3.0, §2). Per MILESTONES.md M8: a **legend/colorbar** (the phase→color wheel + the
-magnitude→opacity scale, with labeled bounds, matching the ADR-0013 transfer function
-/ ADR-0014 colormap) and a **high-level `plot(field, dims, options)` facade** over the
-two-step volume/viewer setup. Reuse: the ADR-0021 overlay (lines/triangles/glyphs) for
-the colorbar swatch + labels, `iv::text::buildAnnotations`/`appendText` for legend
-text, `iv::PlotAxes`-style declarative options. Write the M8 ADRs (Proposed → Accepted
-gate) before implementing. LaTeX math is still deferred. Eyeball results on the real
-`example_data/` volumes (see "Test data") — they exercise the magnitude/phase legend.
+## Next Action
+The founding arc is done. The most immediate likely next step is the maintainer's deferred
+**legend visual-polish pass** — appearance/placement of the 2-D swatch (the default panel is
+`LegendSpec::rectNdc = {0.60,−0.45,0.84,0.45}`; tune sizes/margins/backing), and **B-0011**
+(log-spaced magnitude ticks in log mode). Other open work: **B-0005** (more colormaps),
+**B-0009** (declare a project LICENSE), and **LaTeX math** labels (deferred since M6). Any of
+these touching a public contract starts at ORIENT → CONTRACT with a new ADR (Proposed →
+Accepted) before code. The legend's appearance is pure presentation — eyeball it with
+`DISPLAY=:1 ./build/debug/iv_view --input example_data/wf1.c64 --dims 150 150 150`.
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.
-- VMA still deferred (D-0017); B-0006 open — the viewer adds swapchain images
-  (driver-managed) and a couple of small per-frame allocations; revisit if memory
-  management grows.
-- `clearAndReadback` (M2) still has its own inline submit/barriers rather than the
-  shared `commands.hpp` helpers — fold in if touched (not urgent).
-- A separate present queue is **not** supported (ADR-0016): graphics == present on
-  the target; deferred to Backlog.
+- VMA still deferred (D-0017); B-0006 open — revisit if memory management grows.
+- `clearAndReadback` (M2) still has its own inline submit/barriers rather than the shared
+  `commands.hpp` helpers — fold in if touched (not urgent).
+- A separate present queue is **not** supported (ADR-0016); deferred to Backlog.
 
 ## Landmines & Context
 - ORIENT before writing (§3.0): this file → DEV_PROCESS → MILESTONES → ADR INDEX →
-  DECISIONS. Restate governing ADRs before coding; ADRs are append-only and Accepted
-  ones are immutable — record deviations in DECISIONS.md + CHANGELOG (as D-0030 did
-  for the ADR-0019 teeth).
-- **`glslc` is a required build tool** (ADR-0011/D-0022): configure fails without it.
-  Shaders live in `shaders/`; SPIR-V is embedded (regenerated each build). The
-  colormap LUT is committed data — regenerate with `tools/gen_colormap.py` if it
-  changes.
-- **Viewer is GLFW-coupled and isolated** (ADR-0016): only `iv_viewer`/`iv_view`
-  link `glfw`. The core `iv`, tests, and `iv_bench` must keep building with
-  `-DIV_BUILD_VIEWER=OFF` / no glfw3 — that configuration is the isolation gate.
-  Build the viewer with the system GLFW (`libglfw3-dev`, 3.3.10 here).
-- **Text is HarfBuzz-coupled and isolated** (ADR-0022): only `iv_text` (and its
-  tests) link vendored HarfBuzz. `-DIV_BUILD_TEXT=OFF` must keep `iv`/tests building
-  with **no HarfBuzz present** — the text-free isolation gate (mirrors the viewer).
-  HarfBuzz is **vendored, not system** (`third_party/harfbuzz/`, pin in VENDORING.md);
-  it builds as the single amalgamated TU `src/harfbuzz.cc` (~12 MB object, ~12 s) with
-  **no `HAVE_*` defines** (built-in OpenType+UCD). Never add a `HAVE_*`/ICU/FreeType
-  define. `iv::text::Shaper` is the only place that includes `<hb.h>`; **no HB type
-  may appear in any `include/` header** (ADR-0004 — there's a grep-able gate). The
-  bundled face is embedded (no runtime file); positions are 26.6 fixed point →
-  divide by 64 for pixels (already done in `Shaper::shape`).
-- **Slug glyph rendering (ADR-0023, D-0036) gotchas:** the atlas is **RGBA16I**
-  (4×int16/texel, uploaded as `R16G16B16A16_SINT`), *not* int32 — this is why blobs
-  are 8-byte- not 16-byte-aligned, and the source of the ±8000-unit coordinate range.
-  Glyph outlines are encoded in **font units** (a separate upem-scaled `hb_font`), so
-  `EncodedGlyph::extents` are font units (e.g. 'H' ≈ 33,0..716,683 at upem 1000); the
-  layout scales by `pixelSize/upem`. The vendored Slug GLSL is OpenGL-style; it only
-  compiles for Vulkan because `shaders/glyph.frag` is built with
-  `-fauto-bind-uniforms -fauto-map-locations` (the atlas `isamplerBuffer` → **set 0 /
-  binding 0** — the glyph descriptor layout must match). Glyph quads are baked to
-  **clip space (NDC) on the CPU** (no `hb_gpu_dilate`). Glyphs render on the
-  **headless `render()` path only**; the present path passes `nullptr` glyphs
-  (B-0010). The glyph pipeline is in core `iv` (no HarfBuzz link), so it builds with
-  `IV_BUILD_TEXT=OFF` — don't make it depend on `iv_text`.
-- **Annotations (ADR-0024/0026) gotchas:** `iv::vk::viewProjection` must stay
-  **consistent with the ADR-0012 ray camera** (the `[viewproj]` collinearity test is
-  the guard — don't "simplify" the matrix or drop the y-down/top-left flip). It is
-  **column-major** for the overlay shader. `iv::text::buildAnnotations` (in `iv_text`,
-  needs a `Shaper`) fills an `Overlay`: box/ticks/through-axes are **world-space**
-  (via `Overlay::transform`); **labels are screen-space** glyphs (NDC-baked,
-  `appendText`) anchored to the **box silhouette** (exact face-facing test) and offset
-  **outward** — the outward offset is load-bearing for no-data-overlap (the
-  `[annot]` "labels outside silhouette" test is the guard). The viewer tracks the
-  camera via `Viewer::setOnFrame` (rebuilds the overlay each frame, after
-  `applyCamera`); `iv_view` links `iv_text` only when `IV_BUILD_TEXT` (`#ifdef
-  IV_VIEW_TEXT`, else a simple overlay). `PlotAxes`/`ticksFor` are pure host (core
-  `iv`) — log axes / custom formatters are out of scope (ADR-0024).
-- **Viewer lifetime is pimpl-ordered** (`src/vk/viewer.cpp` `Viewer::Impl`): member
-  declaration order is load-bearing (GLFW lib guard first → destroyed last; window
-  after the Context; all device children before the Context). `~Impl` waits the
-  device idle (via a cached `device` handle, not the affinity-checked accessor)
-  before any Unique<> deleter runs. The GLFW user-pointer points into the stable
-  `unique_ptr<Impl>`, so the Viewer stays cheaply movable.
-- **Present correctness:** the swapchain image must be in `ePresentSrcKHR` at present
-  (dropping that barrier is a validation error — the teeth). `renderFinished` is
-  **per swapchain image** (not per frame) so present never waits a reused semaphore.
-  Blit is **component-aware**, so an RGBA8 render lands correctly in a BGRA8
-  swapchain (don't "fix" this with a copy).
-- **Opacity correction (ADR-0020, done):** `ray_march.comp` now applies
-  `α = 1 − (1−a)^(dt·kReferenceSteps)` (`kReferenceSteps = 256`), so density is
-  invariant to `stepCount`. Combined with early-ray termination, render cost stays
-  largely `stepCount`-insensitive, so the ADR-0019 perf teeth still needs
-  `--no-early-term` to bite (D-0030). Don't "simplify" the bench teeth back to plain
-  `--step-mult 8`.
-- **Coordinate convention (ADR-0012):** right-handed, **+Y up**, volume = `[0,1]³`,
-  **world position = texture coordinate**, image origin top-left.
-- **Volume stores `(Re, Im)`, not `(magnitude, phase)`** (ADR-0015, supersedes
-  ADR-0009): magnitude/phase derived in-shader (`length`/`atan2`). Never store or
-  interpolate the phase *angle* (a standing seam test guards this).
-- **`R32G32_SFLOAT` linear filtering isn't core-mandatory**; the renderer queries it
-  and falls back to nearest (`Renderer::volumeLinearFilter()`).
-- **Precision** (D-0020 / D-0025): `double` input is narrowed per component in
-  `deriveField`; the magnitude *range* is computed from `|z|` in input precision.
-- **LSan scoped off for Vulkan-inclusive runs** (D-0015); the validation layer (incl.
-  the pNext teardown messenger) is the Vulkan-object-leak gate.
-- M2–M5 use **classic 1.0 barriers** (D-0016); no sync2 (present path didn't need
-  it). Vulkan boundary (ADR-0004): include only `iv/vk/vulkan.hpp`; never leak
-  `vk::Result` into consumer signatures.
-- Rejection tests use the short-circuiting `rejected()` helper.
+  DECISIONS. Restate governing ADRs before coding; ADRs are append-only and Accepted ones
+  immutable — record deviations in DECISIONS.md + CHANGELOG (as D-0044 corrected ADR-0028's
+  y-up→y-down coordinate note without superseding).
+- **The legend draws ONLY through the host transfer evaluators** (`iv/transfer.hpp`,
+  ADR-0028) — `phaseColor` (mode 0 = the committed `kTwilightLut` with linear+repeat, *same
+  data as the GPU*; mode 1 = the analytic HSV) and `transferNormalized`/`transferOpacity`
+  (mirror `ray_march.comp::sampleOpacity`, **pre** the ADR-0020 dt-correction). They must stay
+  in lock-step with the shader: the `[vk][renderer]` "host phaseColor matches the GPU
+  colormap" cross-check is the guard. Don't "optimize" one side without the other.
+- **Screen-space overlay channels** (`Overlay::screenLines/screenTriangles`, ADR-0028) are
+  **Vulkan clip space, y-down** (y=−1 top), drawn with the identity transform after the
+  world-space `lines/triangles` (which use `Overlay::transform` = the view-projection) and
+  before glyphs. The legend's "magnitude up" maps normalized position v=1 → the top (smaller
+  y). `LegendSpec::rectNdc = {left, top, right, bottom}` (top < bottom). The overlay vertex
+  buffer packs **lines, triangles, screenLines, screenTriangles** in that order (both paths).
+- **Facade targets / isolation** (ADR-0029): `renderPlot` is in **`iv_text`** (needs text,
+  not GLFW); `makePlot` is in **`iv_plot`** (gated on `IV_BUILD_VIEWER AND IV_BUILD_TEXT`).
+  Core `iv` / tests / `iv_bench` still build with both gates OFF (the isolation gates). The
+  returned `Viewer` stays text-agnostic: the per-frame legend/annotation closure owns its
+  `Shaper`+models via a `shared_ptr` (so the lambda is copyable for `std::function`).
+  `PlotOptions` holds the transfer state ONCE and fans it to both RenderParams and LegendSpec.
+- **Annotations (ADR-0024/0026):** `iv::vk::viewProjection` must stay consistent with the
+  ADR-0012 ray camera (the `[viewproj]` collinearity test is the guard — don't drop the
+  y-down/top-left flip). `buildAnnotations` **clears** the overlay + sets `transform`; a
+  caller composing a legend calls it FIRST, then `buildLegend` (which appends, sharing one
+  `Shaper` so glyph atlas offsets stay valid). Labels sit on the box silhouette offset outward
+  — the outward offset is load-bearing for no-data-overlap.
+- **`glslc` is a required build tool** (ADR-0011/D-0022). Shaders in `shaders/`; SPIR-V
+  embedded (regenerated each build). The colormap LUT is committed data
+  (`include/iv/vk/colormap_lut.hpp`) — regenerate with `tools/gen_colormap.py` if it changes;
+  it is shared by the GPU sampler AND `iv::phaseColor`, so a change moves both.
+- **Viewer is GLFW-coupled & isolated** (ADR-0016): only `iv_viewer`/`iv_view`/`iv_plot` link
+  glfw. **Text is HarfBuzz-coupled & isolated** (ADR-0022): only `iv_text` (and `iv_plot` via
+  it) link vendored HarfBuzz; **no HB type in any `include/` header** (grep-able gate).
+  HarfBuzz is vendored (`third_party/harfbuzz/`, pin in VENDORING.md), built as the
+  amalgamated TU with no `HAVE_*` defines.
+- **Opacity correction (ADR-0020):** `α = 1 − (1−a)^(dt·256)` is a ray-integration effect, NOT
+  part of the per-sample transfer — the legend depicts the authored `transferOpacity` curve,
+  not the dt-corrected α. Don't conflate them.
+- **Present correctness:** swapchain image must be `ePresentSrcKHR` at present (the teeth);
+  `renderFinished` is per swapchain image; blit is component-aware (RGBA8 render → BGRA8
+  swapchain). Viewer lifetime is pimpl-ordered (member declaration order is load-bearing).
+- **Coordinate/value conventions:** RH, +Y up, volume `[0,1]³`, world position = texcoord,
+  image origin top-left (ADR-0012/0023). Volume stores `(Re, Im)` not `(magnitude, phase)`
+  (ADR-0015) — never interpolate the phase angle (a seam test guards this). Classic 1.0
+  barriers (D-0016). `R32G32_SFLOAT` linear filtering isn't core-mandatory (nearest fallback).
+- LSan scoped off for Vulkan-inclusive runs (D-0015); the validation layer is the
+  Vulkan-object-leak gate. Rejection tests use the short-circuiting `rejected()` helper.
 
 ## Commands
 - Build/test (Debug): `cmake --build build/debug` then
-  `ASAN_OPTIONS=detect_leaks=0 ./build/debug/tests/iv_tests` (filter e.g.
-  `"[renderer]"` / `"[camera]"`).
+  `ASAN_OPTIONS=detect_leaks=0 ./build/debug/tests/iv_tests` (filter e.g. `"[transfer]"`,
+  `"[legend]"`, `"[plot]"`, `"[renderer]"`).
 - Sanitizer gate: `cmake -S . -B build/asan -DIV_SANITIZE=address,undefined` then
   `ctest --test-dir build/asan --output-on-failure`.
-- GLFW-free check: `cmake -S . -B build/noviewer -DIV_BUILD_VIEWER=OFF` then build.
-- Text-free check: `cmake -S . -B build/notext -DIV_BUILD_TEXT=OFF` then build
-  `iv_tests` (no HarfBuzz; the `[text]` suite is excluded). Text tests: `[text]`.
-- Viewer (needs a display; `DISPLAY=:1` here): `cmake --build build/debug --target
-  iv_view` then `DISPLAY=:1 ./build/debug/iv_view` (interactive) or `… --frames N`
-  (renders N frames, reports validation cleanliness, exits). Flags: `--input FILE
-  --dims NX NY NZ` (raw complex64, x-fastest), `--density D`, `--decades N`. Keys:
-  drag orbit, scroll zoom, `L` lin/log, `C` colormap, `R` reset, `↑/↓` density,
+- GLFW-free check: `cmake -S . -B build/noviewer -DIV_BUILD_VIEWER=OFF` then build (renderPlot
+  present, makePlot/iv_plot absent). Text-free check: `cmake -S . -B build/notext
+  -DIV_BUILD_TEXT=OFF` then build (no HarfBuzz; text/legend/plot tests excluded; `[transfer]`
+  core stays).
+- Viewer (needs a display; `DISPLAY=:1` here): `cmake --build build/debug --target iv_view`
+  then `DISPLAY=:1 ./build/debug/iv_view` (interactive, via `makePlot`) or `… --frames N`.
+  Flags: `--input FILE --dims NX NY NZ` (raw complex64, x-fastest), `--density D`, `--decades
+  N`. Keys: drag orbit, scroll zoom, `L` lin/log, `C` colormap, `R` reset, `↑/↓` density,
   `←/→` decade window, `Esc` quit.
-- Benchmark (RTX 4070; build Release for a fair number): `cmake -S . -B build/release
-  -DCMAKE_BUILD_TYPE=Release` → `./build/release/iv_bench` (knobs: `--frames N`,
-  `--step-mult K`, `--no-early-term`, `--advisory`).
-- ADR index: `python3 tools/regenerate_adr_index.py [--check]`.
-- `IV_VULKAN_DEVICE_INDEX` forces a device.
+- High-level API: `iv::makePlot(field, dims, opts)` → configured `Viewer` (call `->run()`);
+  `iv::renderPlot(field, dims, w, h, opts)` → labeled `ImageReadback` (headless).
+- Benchmark (Release): `cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release` →
+  `./build/release/iv_bench`. ADR index: `python3 tools/regenerate_adr_index.py [--check]`.
+  `IV_VULKAN_DEVICE_INDEX` forces a device.
 
 ## Pointers
-- Governing process: `DEV_PROCESS.md`.
-- Milestone arc: `MILESTONES.md` (M1–M7 complete & locked; M8 next).
-- Contracts: `docs/adr/INDEX.md` — ADR-0001…0027 Accepted (ADR-0009 superseded by
-  ADR-0015; ADR-0020/0027 extend ADR-0013).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0041), Backlog B-0001…B-0010.
-- M1–M7 + post-M7 work + teeth: `CHANGELOG.md` (incl. the "Post-M7" section).
-- Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs via the owned
-  `examples/png.hpp`, D-0024; gitignored `gallery/`); `iv_view` (interactive
-  viewer); `iv_bench` (perf).
-- Code: host model `include/iv/volume.hpp`, `include/iv/orbit_camera.hpp`,
-  `include/iv/plot_axes.hpp` (ADR-0024), `src/volume.cpp`, `src/plot_axes.cpp`; Vulkan
-  `include/iv/vk/`, `src/vk/` (commands, memory, shaders, context, offscreen, volume,
-  renderer, **view_projection** (ADR-0026), viewer); text `include/iv/text/`,
-  `src/text/` (shaper, bundled_font, text_layout, **annotations** (ADR-0026)); vendored
-  `third_party/harfbuzz/` (pin in VENDORING.md), `third_party/fonts/`; shaders
-  `shaders/`; generated `colormap_lut.hpp`; benchmark `tools/bench.cpp`; tests
-  `tests/test_*.cpp`.
+- Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M8 complete & locked).
+- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0029 Accepted** (0009 superseded by 0015;
+  0020/0027 extend 0013; 0028 extends 0021).
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0044), Backlog B-0001…B-0011.
+- Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
+- Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
+  makePlot); `iv_bench` (perf).
+- Code: host model `include/iv/` (`volume.hpp`, `orbit_camera.hpp`, `plot_axes.hpp`,
+  **`transfer.hpp`**, **`legend.hpp`**, **`plot.hpp`**), `src/` (`volume.cpp`, `plot_axes.cpp`,
+  **`transfer.cpp`**, **`plot_render.cpp`**, **`plot_make.cpp`**); Vulkan `include/iv/vk/`,
+  `src/vk/` (context, offscreen, volume, view_projection, renderer, viewer); text
+  `include/iv/text/`, `src/text/` (shaper, bundled_font, text_layout, annotations,
+  **`legend_builder.cpp`**); shaders `shaders/`; generated `colormap_lut.hpp`; vendored
+  `third_party/harfbuzz/`, `third_party/fonts/`; tests `tests/test_*.cpp`.

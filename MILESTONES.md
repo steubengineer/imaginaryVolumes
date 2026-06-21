@@ -287,19 +287,29 @@ renderer headlessly via deterministic pixel readback before the window exists.
   ADR-0024), 8f19540 (ADR-0025), d305381 (ADR-0026).
 
 ## M8 — Legend/Colorbar & High-Level Plot API
-- **Status:** Planned.
+- **Status:** Complete (2026-06-20) — locked (§2.5).
 - **Goal:** Complete the "usable scientific plotting library": a **legend/colorbar**
   (the phase→color wheel + the magnitude→opacity scale, with labeled bounds, matching
   the ADR-0013/0014 transfer function/colormap) and a **high-level convenience API**
   (a one-call `plot(field, dims, options)` path over the two-step volume/viewer setup).
   Deferred here from M7 to keep M7 to ~3 ADRs (§2.2).
 - **Done when:**
-  - [ ] A legend/colorbar shows the phase→color wheel and the magnitude→opacity scale
+  - [x] A legend/colorbar shows the phase→color wheel and the magnitude→opacity scale
         with labeled bounds, consistent with the active transfer function/colormap.
-  - [ ] A high-level "plot this field" path produces a fully labeled image headless
-        and in the viewer.
+        (Realized as a unified 2-D phase × magnitude **swatch** per the maintainer's
+        CONTRACT design, D-0042; color across, opacity up; consistency guaranteed by
+        shared host transfer evaluators — ADR-0028.)
+  - [x] A high-level "plot this field" path produces a fully labeled image headless
+        (`iv::renderPlot`) and in the viewer (`iv::makePlot` → a configured Viewer; ADR-0029).
 - **Expected ADRs:** legend/colorbar (phase wheel + magnitude scale); high-level plot
   API over the viewer/volume setup.
 - **Tests with teeth:** legend/colorbar correctness vs. the transfer function/colormap
   (teeth: mismatch → red). Refined at M8 CONTRACT.
-- **Actual ADRs:** _(filled at completion)_
+- **Actual ADRs:** ADR-0028 (legend for the phase × magnitude transfer function — host
+  evaluators + screen-space overlay channels + `buildLegend`; extends ADR-0021) · ADR-0029
+  (high-level `makePlot`/`renderPlot` facade over `PlotOptions`). Decisions D-0042…D-0044.
+  Commits: 8f819f9 (contract + both ADRs Accepted), 84c5950 (ADR-0028), 64e8c2d (ADR-0029).
+- **Note:** completed as scoped (2 ADRs, ≤ ~5 per §2.2; no split). The legend form was
+  refined at CONTRACT from a discrete "phase wheel + bar" to a unified 2-D phase × magnitude
+  swatch (D-0042, maintainer's design); consistency with the render is structural (the legend
+  draws through the same host evaluators the GPU cross-check pins to the shader).

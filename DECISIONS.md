@@ -872,3 +872,15 @@ the same day. Future entries prepend above.)
   ADR-0012) and/or a future overlay ADR.
 - **Resolved:** M7 / ADR-0026 (d305381) — `iv::text::buildAnnotations` draws the box +
   ticked, labeled axes (+ through-volume axes) over the volume, both paths.
+
+### B-0011 — Log-spaced (decade) magnitude ticks on the legend in log mode
+- **Origin:** ADR-0028 (M8 legend), 2026-06-20.
+- **What:** In log opacity mode the legend's right-edge magnitude ticks use the linear
+  nice-number generator (`ticksFor`, ADR-0024) placed at their `transferNormalized` heights,
+  so they read as round numbers (the maintainer's request, D-0042) but distribute
+  non-uniformly along a log bar (clustering near `max`). A log-aware generator (decade ticks
+  `…, 0.01, 0.1, 1` and 1·2·5·10ᵏ minors) would space them evenly on the bar.
+- **Why deferred:** the round-number values are what the maintainer asked for; even spacing is
+  a refinement, not a correctness issue.
+- **Revisit when:** the legend visual-polish pass, or if log-mode legends look sparse.
+- **Contract link:** would extend ADR-0028 (legend tick generation) / ADR-0024 (`ticksFor`).

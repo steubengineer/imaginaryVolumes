@@ -23,6 +23,7 @@ void applyTransfer(iv::vk::RenderParams& p, const PlotOptions& o) {
     p.opacityMode = o.opacityMode;
     p.densityScale = o.densityScale;
     p.logDecades = o.logDecades;
+    p.legendThickness = o.legendThickness; // render-inert; carried for consistency (ADR-0030)
     p.background = o.background;
 }
 
@@ -34,6 +35,7 @@ iv::LegendSpec legendFor(const PlotOptions& o, iv::MagnitudeRange range) {
     ls.opacityMode = o.opacityMode;
     ls.densityScale = o.densityScale;
     ls.logDecades = o.logDecades;
+    ls.referenceThickness = o.legendThickness; // ADR-0030
     ls.magnitudeLabel = o.magnitudeLabel;
     ls.phaseLabel = o.phaseLabel;
     return ls;

@@ -367,6 +367,41 @@ TEST_CASE("Renderer: host phaseColor matches the GPU colormap (ADR-0028)", "[vk]
     CHECK(ctx->validationClean());
 }
 
+// teeth (ADR-0030): RenderParams::legendThickness is a legend-only display parameter; the
+// ray-march must ignore it. Two renders differing only in it are pixel-identical. Packing it
+// into the UBO / shader (so the volume reacted to it) would diverge -> red.
+TEST_CASE("Renderer: legendThickness does not affect the render (ADR-0030)", "[vk][renderer]") {
+    auto ctx = Context::create();
+    REQUIRE(ctx.has_value());
+    auto rend = Renderer::create(*ctx);
+    REQUIRE(rend.has_value());
+
+    const GridDims d{8, 8, 8};
+    auto vol = Volume::create(*ctx, uniformField(d, 0.7f, 1.0f), d);
+    REQUIRE(vol.has_value());
+
+    RenderParams p;
+    p.legendThickness = 0.1f;
+    auto a = rend->render(*vol, 32, 32, p);
+    REQUIRE(a.has_value());
+    p.legendThickness = 1.5f;
+    auto b = rend->render(*vol, 32, 32, p);
+    REQUIRE(b.has_value());
+
+    bool identical = true;
+    for (std::uint32_t y = 0; y < 32u; ++y) {
+        for (std::uint32_t x = 0; x < 32u; ++x) {
+            const auto pa = a->at(x, y);
+            const auto pb = b->at(x, y);
+            if (pa.r != pb.r || pa.g != pb.g || pa.b != pb.b || pa.a != pb.a) {
+                identical = false;
+            }
+        }
+    }
+    CHECK(identical);
+    CHECK(ctx->validationClean());
+}
+
 // teeth (ADR-0015): phase varies across the ±π branch cut. Storing the complex
 // value (not the angle) keeps interpolation correct, so the negative-real axis
 // renders its true HSV color (red), not the interpolated-to-zero color (cyan).

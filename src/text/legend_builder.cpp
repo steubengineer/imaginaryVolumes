@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -89,12 +90,13 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
     const auto pxY = [&](float ndc) { return (ndc + 1.0f) * halfH; };
 
     // The 2-D swatch. Width = phase (-pi .. +pi, color = phaseColor); height = normalized
-    // magnitude v in [0,1] (low at the bottom, max at the top), alpha = clamp(v * density) =
-    // transferOpacity at the magnitude whose position is v (ADR-0028). There is NO opaque
-    // backing: the swatch composites straight over the scene with its real alpha, so it truly
-    // reflects transparency and matches the plot's saturation (a backing tone would desaturate
-    // partial-opacity cells). The gradient is mode-independent; the mode only sets where
-    // magnitude VALUES sit (the right ticks).
+    // magnitude v in [0,1] (low at the bottom, max at the top). The per-sample alpha at v is
+    // transferOpacity = clamp(v * density), then corrected for the volume's accumulation over the
+    // reference thickness (ADR-0030: accumulatedOpacity), so the swatch matches what a slab of
+    // that magnitude renders. There is NO opaque backing: the swatch composites straight over the
+    // scene with its real alpha, so it truly reflects transparency and matches the plot's
+    // saturation. The gradient is opacity-mode-independent; the mode only sets where magnitude
+    // VALUES sit (the right ticks).
     for (int j = 0; j < kCols; ++j) {
         const float u0 = static_cast<float>(j) / static_cast<float>(kCols);
         const float u1 = static_cast<float>(j + 1) / static_cast<float>(kCols);
@@ -107,8 +109,10 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
             const float v1 = static_cast<float>(i + 1) / static_cast<float>(kRows);
             const float y0 = yBot + (yTop - yBot) * v0; // y-down: v=0 -> bottom, v=1 -> top
             const float y1 = yBot + (yTop - yBot) * v1;
-            const float a0 = std::clamp(v0 * spec.densityScale, 0.0f, 1.0f);
-            const float a1 = std::clamp(v1 * spec.densityScale, 0.0f, 1.0f);
+            const float a0 = iv::accumulatedOpacity(std::clamp(v0 * spec.densityScale, 0.0f, 1.0f),
+                                                    spec.referenceThickness);
+            const float a1 = iv::accumulatedOpacity(std::clamp(v1 * spec.densityScale, 0.0f, 1.0f),
+                                                    spec.referenceThickness);
             squad(ov, x0, y0, x1, y1, {rgb0[0], rgb0[1], rgb0[2], a0}, {rgb1[0], rgb1[1], rgb1[2], a0},
                   {rgb1[0], rgb1[1], rgb1[2], a1}, {rgb0[0], rgb0[1], rgb0[2], a1});
         }
@@ -172,6 +176,17 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
     if (!spec.magnitudeLabel.empty()) {
         centeredLabel(ov, sh, spec.magnitudeLabel, pxX(0.5f * (xL + xR)),
                       pxY(yTop) - kPhaseLabelPadPx - 0.4f * sh.pixelSize(), fbW, fbH);
+    }
+
+    // (6) Reference-thickness label (ADR-0030): the swatch opacity is accumulatedOpacity(a, L),
+    //     so displaying L (the thickness) keeps the legend analytically invertible to the
+    //     per-sample alpha. Uses plain "L" because the bundled NCM-Book face lacks U+2113 (the
+    //     script small l) — see test_legend.
+    {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "L = %.2f", static_cast<double>(spec.referenceThickness));
+        centeredLabel(ov, sh, buf, pxX(0.5f * (xL + xR)),
+                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 3.8f * sh.pixelSize(), fbW, fbH);
     }
 }
 

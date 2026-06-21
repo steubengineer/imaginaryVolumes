@@ -6,8 +6,18 @@ tests. Newest milestone first.
 
 ## Post-M8 — Legend Fixes
 
-Bug fixes and a refinement to the M8 legend, after the maintainer eyeballed it in the viewer.
+Bug fixes and refinements to the M8 legend, after the maintainer eyeballed it in the viewer.
 
+- **Thickness-corrected opacity** (ADR-0030, extends ADR-0020; D-0046): the volume accumulates
+  opacity along each ray, so the per-sample legend read far more transparent than the render. The
+  swatch alpha is now `accumulatedOpacity(a, L) = 1 − (1−a)^(256·L)` — the ADR-0020 accumulation
+  over a tunable reference thickness `L` (soft default `0.1`; `0` = the uncorrected per-sample
+  legend). New host evaluator `iv::accumulatedOpacity` + `iv::kReferenceSteps`; new
+  `LegendSpec::referenceThickness` / `PlotOptions::legendThickness` / a **render-inert**
+  `RenderParams::legendThickness` (the viewer's live `[`/`]` channel); a legend `L = …` label
+  (plain `L` — the bundled NCM-Book face lacks U+2113 `ℓ`). **Teeth:** `accumulatedOpacity`
+  anchors + monotonicity; a low-alpha swatch is markedly more opaque with thickness than at `0`;
+  and two renders differing only in `legendThickness` are pixel-identical (render-inert).
 - **Truly transparent swatch** (D-0045): removed the opaque backing panel — the swatch now
   composites straight over the scene with its real alpha, matching the plot's saturation instead
   of desaturating partial-opacity cells toward a gray tone.

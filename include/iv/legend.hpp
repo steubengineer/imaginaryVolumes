@@ -23,6 +23,11 @@ struct LegendSpec {
     std::uint32_t opacityMode{0};   // 0 = linear, 1 = logarithmic (ADR-0013)
     float densityScale{1.0f};       // ADR-0013
     float logDecades{0.0f};         // log decade window, 0 = full range (ADR-0027)
+    // Reference thickness for the opacity "thickness" correction (ADR-0030): the swatch alpha is
+    // accumulatedOpacity(a, referenceThickness) = the opacity a uniform slab of this thickness
+    // (unit-cube units) renders, so it matches the volume's accumulation. 0 = uncorrected
+    // per-sample legend (ADR-0028). Default 0.1 (a soft, readable slab; 1.0 = full traversal).
+    float referenceThickness{0.1f};
 
     std::string magnitudeLabel{"|z|"};   // caption above the bar (the vertical axis)
     std::string phaseLabel{"arg z"};     // caption below the bar (the horizontal axis)

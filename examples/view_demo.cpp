@@ -3,7 +3,8 @@
 // camera-tracking plot (box + ticked axes + the phase x magnitude legend) is produced by the
 // one-call high-level facade iv::makePlot (ADR-0029); without text, a simple line/quad overlay.
 // Left-drag orbits, scroll zooms; keys: Esc quit, L linear/log opacity, C colormap
-// (twilight/HSV), R reset, up/down opacity density, left/right log decade window (ADR-0027).
+// (twilight/HSV), R reset, up/down opacity density, left/right log decade window (ADR-0027),
+// [ / ] legend opacity thickness (ADR-0030).
 //
 // Usage:
 //   iv_view                                   built-in 128^3 phase vortex

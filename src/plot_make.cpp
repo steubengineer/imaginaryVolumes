@@ -57,6 +57,7 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
     p.opacityMode = options.opacityMode;
     p.densityScale = options.densityScale;
     p.logDecades = options.logDecades;
+    p.legendThickness = options.legendThickness; // ADR-0030 (the live [ / ] channel)
     p.background = options.background;
 
     auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), options.labelPixelSize);
@@ -77,6 +78,7 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
             ls.opacityMode = cam.opacityMode;
             ls.densityScale = cam.densityScale;
             ls.logDecades = cam.logDecades;
+            ls.referenceThickness = cam.legendThickness; // live thickness (ADR-0030)
             ls.magnitudeLabel = state->magnitudeLabel;
             ls.phaseLabel = state->phaseLabel;
             iv::text::buildLegend(ov, ls, w, h, state->shaper); // appends the screen legend

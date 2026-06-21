@@ -69,6 +69,16 @@ TEST_CASE("Legend: buildLegend populates screen channels + labels and honors sho
     spec.show = false;
     iv::text::buildLegend(off, spec, 256u, 256u, *shaper);
     CHECK(off.empty());
+
+    // The ADR-0030 thickness label uses plain "L" because the bundled NCM-Book face lacks
+    // U+2113 (the script small l) — it maps to .notdef (0). Pin both so the label symbol stays a
+    // present glyph (don't "upgrade" the label back to U+2113 without a font that has it).
+    const auto ell = shaper->shape("\xE2\x84\x93");
+    const auto cap = shaper->shape("L");
+    REQUIRE(ell.size() == 1);
+    REQUIRE(cap.size() == 1);
+    CHECK(ell[0].glyphId == 0u); // U+2113 absent in NCM-Book
+    CHECK(cap[0].glyphId != 0u); // "L" present
 }
 
 TEST_CASE("Legend: rebuilding into a reused overlay does not accumulate", "[legend]") {
@@ -123,6 +133,35 @@ TEST_CASE("Legend: log mode uses decade ticks that track the window (B-0011)", "
     CHECK(ow.glyphs.size() > on.glyphs.size());
 }
 
+TEST_CASE("Legend: thickness correction boosts swatch opacity (ADR-0030)", "[legend]") {
+    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
+    REQUIRE(shaper.has_value());
+
+    iv::LegendSpec base;
+    base.range = {0.01f, 1.0f};
+    base.densityScale = 0.1f; // small per-sample alpha (capped at 0.1) so the boost is unmistakable
+
+    iv::LegendSpec off = base;
+    off.referenceThickness = 0.0f; // uncorrected per-sample legend
+    iv::LegendSpec thick = base;
+    thick.referenceThickness = 0.5f;
+
+    iv::vk::Overlay oo;
+    iv::vk::Overlay ot;
+    iv::text::buildLegend(oo, off, 256u, 256u, *shaper);
+    iv::text::buildLegend(ot, thick, 256u, 256u, *shaper);
+
+    const auto maxAlpha = [](const iv::vk::Overlay& ov) {
+        float m = 0.0f;
+        for (const auto& v : ov.screenTriangles) {
+            m = std::max(m, v.color[3]);
+        }
+        return m;
+    };
+    CHECK(maxAlpha(oo) <= 0.11f); // off: per-sample alpha capped at the density (0.1)
+    CHECK(maxAlpha(ot) > 0.9f);   // thickness 0.5 accumulates the top toward opaque
+}
+
 TEST_CASE("Legend: swatch renders phase color across and opacity up (ADR-0028)", "[vk][legend]") {
     auto ctx = Context::create();
     REQUIRE(ctx.has_value());
@@ -142,6 +181,7 @@ TEST_CASE("Legend: swatch renders phase color across and opacity up (ADR-0028)",
     spec.colormapMode = 1; // HSV: theta=0 -> cyan, theta=+-pi -> red
     spec.opacityMode = 0;
     spec.densityScale = 1.0f;
+    spec.referenceThickness = 0.0f; // isolate the per-sample gradient (ADR-0030 has its own test)
     spec.rectNdc = {0.2f, -0.7f, 0.7f, 0.7f}; // a large, easy-to-sample swatch
 
     iv::vk::Overlay ov;

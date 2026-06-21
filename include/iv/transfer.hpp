@@ -16,6 +16,17 @@
 
 namespace iv {
 
+// Reference sample count for the ADR-0020 opacity correction (must equal the shader's
+// kReferenceSteps): per-sample opacities are authored for a step spacing dt_ref = 1/256.
+inline constexpr float kReferenceSteps = 256.0f;
+
+// Accumulate a per-sample opacity `a` (= transferOpacity, ADR-0013/0028) over a uniform slab of
+// `thickness` (in unit-cube [0,1]^3 path-length units), mirroring the volume's ADR-0020/0012
+// compositing: A = 1 - (1 - a)^(kReferenceSteps * thickness). `thickness <= 0` returns `a`
+// unchanged (the uncorrected per-sample legend). Used to correct the legend opacity for the
+// volume's "thickness" effect (ADR-0030); result is finite and clamped to [0,1].
+[[nodiscard]] float accumulatedOpacity(float perSampleAlpha, float thickness) noexcept;
+
 // arg(z) -> RGB (ADR-0014), mirroring ray_march.comp::sampleColor. `phaseRadians` is the
 // phase in [-pi, pi]; values outside wrap cyclically (t = (phase+pi)/(2pi), periodic).
 // colormapMode 0 samples the committed twilight LUT with linear interpolation + repeat wrap

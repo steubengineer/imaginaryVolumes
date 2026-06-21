@@ -30,11 +30,16 @@ ticked, labeled axes (M7), a **phase × magnitude legend** (M8), and a **one-cal
   now builds its labeled plot via `makePlot`; the per-frame closure rebuilds box/axes + legend
   from the LIVE params so hotkeys update the legend. Decisions D-0042…D-0044.
 
-Decisions D-0001…D-0044; Backlog B-0005 (more colormaps), B-0006 (VMA), B-0009 (LICENSE) open;
+**Post-M8 legend polish** (CHANGELOG § Post-M8): truly-transparent swatch (D-0045), per-frame
+overlay reset (`Overlay::clear()` — was accumulating), log **decade ticks** (B-0011), and
+**thickness-corrected opacity** (ADR-0030; `iv::accumulatedOpacity(a, L)` + the `[`/`]` thickness
+knob with an on-legend `L = …` label). Default reference thickness `L = 0.1` (soft; tunable).
+
+Decisions D-0001…D-0046; Backlog B-0005 (more colormaps), B-0006 (VMA), B-0009 (LICENSE) open;
 B-0007/0008/0010/0011 resolved. ADR index current
-(**ADR-0001…0029 Accepted**; 0009 superseded by 0015). Gates: full suite **746/76**;
-ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **746/76**;
-text-free (transfer core, no HarfBuzz) **565/57**; no HarfBuzz type in any public header;
+(**ADR-0001…0030 Accepted**; 0009 superseded by 0015). Gates: full suite **768/79**;
+ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **768/79**;
+text-free (transfer core, no HarfBuzz) **580/59**; no HarfBuzz type in any public header;
 `iv_view` (via makePlot) validation-CLEAN on the vortex and a 150³ dataset.
 
 ## Test data (gitignored)
@@ -83,7 +88,12 @@ Accepted) before code. The legend's appearance is pure presentation — eyeball 
   The swatch has **no opaque backing** — it composites over the scene with real alpha so it
   truly reflects transparency and matches the plot saturation (D-0045; don't re-add a backing).
   Log mode uses **decade ticks** (powers of 10) so the legend tracks the decade window (B-0011);
-  linear mode uses `ticksFor`.
+  linear mode uses `ticksFor`. The swatch opacity is **thickness-corrected** —
+  `accumulatedOpacity(a, L) = 1−(1−a)^(256·L)` (ADR-0030; the ADR-0020 accumulation over
+  `LegendSpec::referenceThickness`), so it matches the volume's accumulation (`L=0` =
+  uncorrected). The viewer drives `L` via the **render-inert** `RenderParams::legendThickness` +
+  `[`/`]` (a `[vk][renderer]` test pins that the ray-march ignores it). The thickness label uses
+  plain **`L`** — NCM-Book lacks U+2113 `ℓ` (a `[legend]` test pins this; don't restore `ℓ`).
 - **Facade targets / isolation** (ADR-0029): `renderPlot` is in **`iv_text`** (needs text,
   not GLFW); `makePlot` is in **`iv_plot`** (gated on `IV_BUILD_VIEWER AND IV_BUILD_TEXT`).
   Core `iv` / tests / `iv_bench` still build with both gates OFF (the isolation gates). The
@@ -143,9 +153,9 @@ Accepted) before code. The legend's appearance is pure presentation — eyeball 
 
 ## Pointers
 - Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M8 complete & locked).
-- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0029 Accepted** (0009 superseded by 0015;
-  0020/0027 extend 0013; 0028 extends 0021).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0044), Backlog B-0001…B-0011.
+- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0030 Accepted** (0009 superseded by 0015;
+  0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020).
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0046), Backlog B-0001…B-0011.
 - Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
   makePlot); `iv_bench` (perf).

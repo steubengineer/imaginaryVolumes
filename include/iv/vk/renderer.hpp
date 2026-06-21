@@ -45,6 +45,11 @@ struct RenderParams {
     float logDecades{0.0f};
     // Phase colormap (ADR-0014): 0 = perceptually-uniform LUT, 1 = HSV hue wheel.
     std::uint32_t colormapMode{0};
+    // Reference thickness for the LEGEND's opacity correction (ADR-0030), in unit-cube units.
+    // This is the live channel the viewer drives (`[`/`]`) and the plot facade's per-frame
+    // callback reads; it does NOT affect the ray-march — the renderer ignores it (fillUbo never
+    // reads it; two renders differing only in this value are pixel-identical).
+    float legendThickness{0.1f};
 };
 
 // A 2D/3D overlay drawn over the volume render (ADR-0021): colored line-list and

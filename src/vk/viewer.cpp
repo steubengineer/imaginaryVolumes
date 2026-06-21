@@ -138,7 +138,8 @@ void Viewer::Impl::onScroll(GLFWwindow* w, double /*xoff*/, double yoff) {
 }
 
 void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, int /*mods*/) {
-    // Toggles fire on press only; the decade-window keys ([ ]) also repeat (hold to ramp).
+    // Toggles (Esc/L/C/R) fire on press only; the density (up/down), decade (left/right), and
+    // legend-thickness ([ ]) keys also repeat (hold to ramp).
     if (action != GLFW_PRESS && action != GLFW_REPEAT) {
         return;
     }
@@ -151,6 +152,8 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
     constexpr float kDensityFactor = 1.25f; // multiplicative density step (a scale param)
     constexpr float kDensityMin = 0.02f;
     constexpr float kDensityMax = 50.0f;
+    constexpr float kThicknessStep = 0.02f; // legend reference-thickness step (ADR-0030)
+    constexpr float kThicknessMax = 2.0f;   // 0 = uncorrected per-sample legend
     switch (key) {
     case GLFW_KEY_ESCAPE:
         if (!repeat) {
@@ -199,6 +202,18 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
             im->params.logDecades = kDecadeMin;
         }
         im->params.opacityMode = 1u;
+        break;
+    case GLFW_KEY_RIGHT_BRACKET: // ] : thicker legend reference slab -> more opaque (ADR-0030)
+        im->params.legendThickness += kThicknessStep;
+        if (im->params.legendThickness > kThicknessMax) {
+            im->params.legendThickness = kThicknessMax;
+        }
+        break;
+    case GLFW_KEY_LEFT_BRACKET: // [ : thinner slab (down to 0 = uncorrected per-sample legend)
+        im->params.legendThickness -= kThicknessStep;
+        if (im->params.legendThickness < 0.0f) {
+            im->params.legendThickness = 0.0f;
+        }
         break;
     default:
         break;

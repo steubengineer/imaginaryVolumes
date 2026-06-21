@@ -87,3 +87,19 @@ TEST_CASE("transferOpacity applies densityScale then clamps", "[transfer]") {
     REQUIRE(iv::transferOpacity(0.5f, r, 0, 2.0f, 0.0f) == Catch::Approx(1.0f));  // 0.5*2 clamped
     REQUIRE(iv::transferOpacity(0.5f, r, 0, 0.0f, 0.0f) == Catch::Approx(0.0f));  // density 0
 }
+
+TEST_CASE("accumulatedOpacity mirrors the ADR-0020 accumulation over thickness", "[transfer]") {
+    // thickness <= 0 -> uncorrected per-sample alpha (the escape hatch / ADR-0028 legend).
+    REQUIRE(iv::accumulatedOpacity(0.3f, 0.0f) == Catch::Approx(0.3f));
+    REQUIRE(iv::accumulatedOpacity(0.3f, -1.0f) == Catch::Approx(0.3f));
+    // Endpoints stay put; a small per-sample alpha accumulates to much more over thickness.
+    REQUIRE(iv::accumulatedOpacity(1.0f, 0.1f) == Catch::Approx(1.0f));
+    REQUIRE(iv::accumulatedOpacity(0.0f, 0.1f) == Catch::Approx(0.0f));
+    // 1 - (1-0.01)^(256*0.1) = 1 - 0.99^25.6 = 0.2269 (vs 0.01 per-sample).
+    REQUIRE(iv::accumulatedOpacity(0.01f, 0.1f) == Catch::Approx(0.2269f).margin(1e-3));
+    // Monotone increasing in both thickness and per-sample alpha.
+    REQUIRE(iv::accumulatedOpacity(0.01f, 0.05f) < iv::accumulatedOpacity(0.01f, 0.2f));
+    REQUIRE(iv::accumulatedOpacity(0.01f, 0.1f) < iv::accumulatedOpacity(0.05f, 0.1f));
+    // The accumulated opacity exceeds the per-sample alpha (the "thickness" boost).
+    REQUIRE(iv::accumulatedOpacity(0.02f, 0.1f) > 0.02f);
+}

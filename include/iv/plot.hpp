@@ -41,6 +41,7 @@ struct PlotOptions {
     std::uint32_t opacityMode{0};        // ADR-0013: 0 = linear, 1 = logarithmic
     float densityScale{1.0f};
     float logDecades{0.0f};              // ADR-0027 (0 = full range)
+    float legendThickness{0.1f};         // legend opacity thickness correction (ADR-0030; 0 = off)
     std::array<float, 4> background{0.05f, 0.05f, 0.07f, 1.0f};
 
     std::optional<MagnitudeRange> magnitudeRange{}; // else the Volume's auto range (ADR-0010)

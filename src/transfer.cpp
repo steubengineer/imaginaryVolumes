@@ -48,6 +48,15 @@ std::array<float, 3> sampleLut(float t) noexcept {
 
 } // namespace
 
+float accumulatedOpacity(float perSampleAlpha, float thickness) noexcept {
+    const float a = std::clamp(perSampleAlpha, 0.0f, 1.0f);
+    if (thickness <= 0.0f) {
+        return a; // uncorrected: the ADR-0028 per-sample legend
+    }
+    // 1 - (1-a)^(256*thickness): the ADR-0020 accumulation over a uniform slab (1-a in [0,1]).
+    return std::clamp(1.0f - std::pow(1.0f - a, kReferenceSteps * thickness), 0.0f, 1.0f);
+}
+
 std::array<float, 3> phaseColor(float phaseRadians, std::uint32_t colormapMode) noexcept {
     const float t = (phaseRadians + kPi) / (2.0f * kPi);
     if (colormapMode == 1u) {

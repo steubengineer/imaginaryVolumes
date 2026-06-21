@@ -10,6 +10,58 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0043 — M8 high-level plot facade: return a configured Viewer + headless renderPlot
+- **Date / milestone:** 2026-06-20 / M8 (CONTRACT) — maintainer decision
+- **Choice:** The shape of the one-call convenience API over the multi-step
+  Volume/Viewer/axes/legend setup (`examples/view_demo.cpp` does it by hand): a blocking
+  `plot()` that opens the window and runs to close, vs. returning a configured Viewer the
+  caller drives.
+- **Decision:** **Return a configured (not-yet-running) `Viewer`** from
+  `iv::makePlot(field, dims, options)` (caller does `->run()`, may edit `params()` first),
+  plus a headless `iv::renderPlot(field, dims, w, h, options) → ImageReadback` for
+  scripts/CI. A `PlotOptions` aggregate holds the transfer state **once** (colormap/opacity/
+  density/decades) and the facade fans it out to **both** the `RenderParams` and the
+  `LegendSpec`, so the legend can't disagree with the image. `makePlot` installs a
+  `setOnFrame` closure that owns its `Shaper`+`PlotAxes`+`LegendSpec` (via a copyable
+  `shared_ptr`) and rebuilds box/axes (ADR-0026) + legend (ADR-0028) from the **live**
+  params each frame, keeping `Viewer` text-agnostic. The facade lives **outside core `iv`**:
+  `renderPlot` needs `IV_BUILD_TEXT`, `makePlot` needs `IV_BUILD_VIEWER && IV_BUILD_TEXT`;
+  both isolation gates stay green.
+- **Rationale:** Returning a configured Viewer is strictly more flexible than a blocking
+  call (tweak params, drive `runFrames`, embed) at one extra line; the single-source
+  transfer state structurally prevents legend/render mismatch; keeping the facade out of
+  core preserves the GLFW-free / HarfBuzz-free core (D-0001/D-0033).
+- **Contract impact:** ADR-0029 (Proposed).
+- **Deferred alternatives:** a blocking `plot()` (writable as `makePlot(...)->run()`); a
+  PNG-writing `savePlot()`; embedding a full `RenderParams` in `PlotOptions`.
+
+### D-0042 — M8 legend: 2-D phase×magnitude swatch via shared host transfer evaluators
+- **Date / milestone:** 2026-06-20 / M8 (CONTRACT) — maintainer decision
+- **Choice:** What the legend depicts and how it is kept consistent with the active
+  transfer function/colormap (ADR-0013/0014/0020/0027). Options for the form: a discrete
+  phase color wheel + a separate opacity bar, vs. a unified 2-D swatch.
+- **Decision:** A single **rectangular 2-D gradient swatch** to the right of the volume —
+  **color horizontal with phase** (−π…+π), **opacity vertical with magnitude** — with phase
+  ticks **−π, 0, +π** on the bottom and **nice-number** magnitude ticks (`ticksFor`,
+  ADR-0024) on the right. Consistency is guaranteed by factoring the shader's two mappings
+  into **pure-host core-`iv` evaluators** — `iv::phaseColor` (mirrors `sampleColor`; mode 0
+  shares the committed `kTwilightLut`, so host==GPU by construction), `iv::transferNormalized`
+  (magnitude→position, no density) and `iv::transferOpacity` (= `clamp(normalized·density)`,
+  mirrors `sampleOpacity` pre-dt-correction). The legend draws **only** through these. The
+  `Overlay` gains screen-space `screenLines`/`screenTriangles` (identity transform, extends
+  ADR-0021) so the 2-D legend and the 3-D box/axes coexist in one Overlay, drawn identically
+  headless and in the viewer. `iv::text::buildLegend` (in `iv_text`, needs a `Shaper`)
+  appends the swatch/ticks/labels.
+- **Rationale:** The 2-D swatch shows the *joint* (phase×magnitude) transfer in one figure
+  (maintainer's design); shared host evaluators make "legend matches the render" a
+  constructive guarantee + a direct GPU cross-check teeth (perturb an evaluator → legend and
+  a uniform-field pixel diverge → red); per-vertex color/alpha through the existing pipelines
+  adds no new pipeline/feature (keeps the ADR-0019 perf contract + pixel-exact tests).
+- **Contract impact:** ADR-0028 (Proposed; extends ADR-0021, mirrors ADR-0013/0014/0027).
+- **Deferred alternatives:** a discrete color wheel + opacity bar; a GPU-LUT-textured legend
+  quad; log-spaced (decade) magnitude ticks in log mode; the ADR-0027 dt-corrected α in the
+  legend (rejected — the legend depicts the per-sample transfer, not ray integration).
+
 ### D-0041 — Log-scale decade window for the opacity transfer function
 - **Date / milestone:** 2026-06-19 / post-M7 (standalone) — maintainer decision
 - **Choice:** Let the caller control how many decades of magnitude the logarithmic

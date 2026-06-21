@@ -172,8 +172,10 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
 - Viewer (needs a display; `DISPLAY=:1` here): `cmake --build build/debug --target iv_view`
   then `DISPLAY=:1 ./build/debug/iv_view` (interactive, via `makePlot`) or `… --frames N`.
   Flags: `--input FILE --dims NX NY NZ` (raw complex64, x-fastest), `--density D`, `--decades
-  N`. Keys: drag orbit, scroll zoom, `L` lin/log, `C` colormap, `R` reset, `↑/↓` density,
-  `←/→` decade window, `Esc` quit.
+  N`; **label flags (M9)** `--title STR`, `--field STR`, `--{x,y,z}label STR`, `--{x,y,z}unit
+  STR` — any string may carry inline `$…$` math, e.g. `--field '$\psi$' --title '$E=mc^2$'`.
+  Keys: drag orbit, scroll zoom, `L` lin/log, `C` colormap, `R` reset, `↑/↓` density,
+  `←/→` decade window, `[`/`]` legend thickness, `Esc` quit.
 - High-level API: `iv::makePlot(field, dims, opts)` → configured `Viewer` (call `->run()`);
   `iv::renderPlot(field, dims, w, h, opts)` → labeled `ImageReadback` (headless).
 - Benchmark (Release): `cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release` →

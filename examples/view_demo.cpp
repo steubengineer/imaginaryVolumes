@@ -17,6 +17,15 @@
 //                                             given. Adjust live with the left/right
 //                                             arrows (which engage at 4 decades from off).
 //   iv_view ... --frames N                    render N frames then exit (smoke test)
+//   iv_view ... --title STR                    plot title  (text build)
+//   iv_view ... --field STR                    field name -> legend captions |STR| / arg(STR)
+//                                             (default the math-italic "$f$")
+//   iv_view ... --xlabel STR --ylabel STR --zlabel STR   per-axis labels
+//   iv_view ... --xunit  STR --yunit  STR --zunit  STR   per-axis units (shown as "label (unit)")
+//
+//   Any label/title/field string may contain inline $...$ LaTeX-subset math (M9, ADR-0033):
+//   scripts, \frac, \sqrt, \hat/\dot/\overline, \left..\right + bra-ket, Greek/symbol macros.
+//   e.g. --field '$\psi$'  --xlabel '$k_x$' --xunit 'nm^{-1}'  --title '$E=\frac{p^2}{2m}$'
 //
 // Input format: a raw, headerless binary file of NX*NY*NZ complex values as
 // interleaved (real, imag) 32-bit floats (i.e. numpy complex64), native-endian, in
@@ -107,6 +116,11 @@ int main(int argc, char** argv) {
     float density = 2.5f;
     bool densitySet = false;
     float decades = 0.0f; // ADR-0027: log decade window (0 = full range)
+    // Label overrides (M9): any of these may contain inline $...$ LaTeX math (ADR-0033).
+    const char* titleArg = nullptr;
+    const char* fieldArg = nullptr;
+    std::array<const char*, 3> axisLabel{nullptr, nullptr, nullptr};
+    std::array<const char*, 3> axisUnit{nullptr, nullptr, nullptr};
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
@@ -123,6 +137,22 @@ int main(int argc, char** argv) {
             densitySet = true;
         } else if (std::strcmp(argv[i], "--decades") == 0 && i + 1 < argc) {
             decades = std::strtof(argv[++i], nullptr);
+        } else if (std::strcmp(argv[i], "--title") == 0 && i + 1 < argc) {
+            titleArg = argv[++i];
+        } else if (std::strcmp(argv[i], "--field") == 0 && i + 1 < argc) {
+            fieldArg = argv[++i];
+        } else if (std::strcmp(argv[i], "--xlabel") == 0 && i + 1 < argc) {
+            axisLabel[0] = argv[++i];
+        } else if (std::strcmp(argv[i], "--ylabel") == 0 && i + 1 < argc) {
+            axisLabel[1] = argv[++i];
+        } else if (std::strcmp(argv[i], "--zlabel") == 0 && i + 1 < argc) {
+            axisLabel[2] = argv[++i];
+        } else if (std::strcmp(argv[i], "--xunit") == 0 && i + 1 < argc) {
+            axisUnit[0] = argv[++i];
+        } else if (std::strcmp(argv[i], "--yunit") == 0 && i + 1 < argc) {
+            axisUnit[1] = argv[++i];
+        } else if (std::strcmp(argv[i], "--zunit") == 0 && i + 1 < argc) {
+            axisUnit[2] = argv[++i];
         }
     }
 
@@ -205,6 +235,24 @@ int main(int argc, char** argv) {
         opts.axes.z = iv::Axis{-1.0, 1.0, "z", "", {}, {}};
     }
     opts.axes.title = title;
+
+    // CLI label overrides (M9): title / field name / per-axis labels & units. Any string may
+    // carry inline $...$ math (ADR-0033), e.g. --field '$\psi$' --title 'Bell state'.
+    if (titleArg != nullptr) {
+        opts.axes.title = titleArg;
+    }
+    if (fieldArg != nullptr) {
+        opts.fieldName = fieldArg;
+    }
+    const std::array<iv::Axis*, 3> ax{&opts.axes.x, &opts.axes.y, &opts.axes.z};
+    for (std::size_t k = 0; k < 3; ++k) {
+        if (axisLabel[k] != nullptr) {
+            ax[k]->label = axisLabel[k];
+        }
+        if (axisUnit[k] != nullptr) {
+            ax[k]->unit = axisUnit[k];
+        }
+    }
 
     auto viewer = iv::makePlot(std::span<const std::complex<float>>(field), dims, opts);
     if (!viewer) {

@@ -34,3 +34,4 @@
 | [ADR-0027](0027-log-scale-decade-window.md) | Log-Scale Decade Window for the Opacity Transfer Function | Accepted | — |
 | [ADR-0028](0028-legend-phase-magnitude-transfer.md) | Legend for the Phase–Magnitude Transfer Function | Accepted | — |
 | [ADR-0029](0029-high-level-plot-facade.md) | High-Level Plot Facade (`makePlot` / `renderPlot`) | Accepted | — |
+| [ADR-0030](0030-thickness-corrected-legend-opacity.md) | Thickness-Corrected Legend Opacity | Accepted | — |

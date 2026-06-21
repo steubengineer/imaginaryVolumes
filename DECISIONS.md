@@ -10,6 +10,31 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0046 — Thickness-corrected legend opacity (tunable reference thickness + label)
+- **Date / milestone:** 2026-06-20 / post-M8 — maintainer decision
+- **Choice:** The legend (ADR-0028) plots the per-sample opacity `a = transferOpacity(m)`, but
+  the volume accumulates opacity along each ray (ADR-0012/0020), so the legend reads far more
+  transparent than the render — a low-magnitude field shows a near-black legend beside a visibly
+  opaque volume. How to correct the legend for this "thickness" effect, given the per-ray path
+  length varies and a true full-cube correction saturates the swatch.
+- **Decision:** Plot `A = 1 − (1−a)^(256·ℓ_ref)` (the ADR-0020 accumulation over a reference
+  thickness; `256 = kReferenceSteps`) via a new host evaluator `iv::accumulatedOpacity`. `ℓ_ref`
+  is a **tunable** reference thickness with a **soft default 0.1** (a readable gradient, not the
+  saturating full-cube 1.0) — new fields `LegendSpec::referenceThickness`,
+  `PlotOptions::legendThickness`, and a **render-inert** `RenderParams::legendThickness` (the
+  one live channel the ADR-0029 closure reads; ignored by the ray-march). The legend draws a
+  **text label of `ℓ_ref`** so the displayed `A` stays analytically invertible to `a`. Viewer
+  `[` / `]` adjust it live (additive 0.02, clamp `[0,2]`, `0` = uncorrected per-sample legend).
+- **Rationale:** Reuses the ADR-0020 model so legend↔render consistency extends to thickness;
+  tunability + the label give an honest, readable, quantitative legend without a per-ray "true"
+  thickness that doesn't exist. The soft default avoids the full-cube saturation the maintainer
+  rejected.
+- **Contract impact:** ADR-0030 (Accepted). Adds `iv::accumulatedOpacity`/`kReferenceSteps` +
+  the three `*Thickness` fields; no existing signature changes; `0` reproduces ADR-0028.
+- **Deferred alternatives:** full-cube (`ℓ_ref=1`) default; a fixed thickness with no knob; a
+  separate viewer live-param channel (vs the render-inert RenderParams field); retuning the
+  default after eyeballing real data.
+
 ### D-0045 — Legend swatch is truly transparent (no opaque backing); corrects ADR-0028 detail
 - **Date / milestone:** 2026-06-20 / M8 (post-completion polish) — maintainer feedback
 - **Choice / finding:** ADR-0028's Decision described the swatch as "composited over an opaque

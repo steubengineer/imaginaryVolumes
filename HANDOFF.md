@@ -1,6 +1,6 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-20 by the M8 session (Claude / Opus 4.8)
+**Last updated:** 2026-06-21 by the M8 + post-M8 legend session (Claude / Opus 4.8)
 **Active milestone:** **M8 Complete & locked.** With it the founding milestone arc
 **M1–M8 is complete** — the "usable scientific plotting library" goal is met. Next work is
 a maintainer-driven **legend visual-polish pass** and the open Backlog; a new milestone (if
@@ -37,8 +37,9 @@ knob with an on-legend `L = …` label). Default reference thickness `L = 0.1` (
 Plus **caller-named field** captions (ADR-0031; D-0047): `fieldName` (default `"f"`) →
 `|f|` / `arg(f)`, with `magnitudeLabel`/`phaseLabel` overrides — upright; true italic → B-0012.
 
-Decisions D-0001…D-0047; Backlog B-0005 (more colormaps), B-0006 (VMA), B-0009 (LICENSE), B-0012 (true italic field name) open;
-B-0007/0008/0010/0011 resolved. ADR index current
+Decisions D-0001…D-0047; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
+(LICENSE), B-0012 (true italic field name), B-0013 (legend/label visual polish), B-0014 (legend
+`L` in data units), B-0015 (math typesetting); B-0007/0008/0010/0011 resolved. ADR index current
 (**ADR-0001…0031 Accepted**; 0009 superseded by 0015). Gates: full suite **776/80**;
 ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **776/80**;
 text-free (transfer core, no HarfBuzz) **580/59**; no HarfBuzz type in any public header;
@@ -54,14 +55,23 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 **Nothing in flight.** M8 is closed; the working tree is clean at the M8 commits.
 
 ## Next Action
-The founding arc is done. The most immediate likely next step is the maintainer's deferred
-**legend visual-polish pass** — appearance/placement of the 2-D swatch (the default panel is
-`LegendSpec::rectNdc = {0.60,−0.45,0.84,0.45}`; tune sizes/margins). Other open work:
-**B-0005** (more colormaps),
-**B-0009** (declare a project LICENSE), and **LaTeX math** labels (deferred since M6). Any of
-these touching a public contract starts at ORIENT → CONTRACT with a new ADR (Proposed →
-Accepted) before code. The legend's appearance is pure presentation — eyeball it with
-`DISPLAY=:1 ./build/debug/iv_view --input example_data/wf1.c64 --dims 150 150 150`.
+M8 is achieved and locked. The next session is a **graphics-polish pass** the maintainer scoped
+(2026-06-20); agenda, in roughly increasing size:
+- **Legend placement**, **label placements**, and **various label sizes** across the plot — pure
+  presentation (**B-0013**). Default panel `LegendSpec::rectNdc = {0.60,−0.45,0.84,0.45}`;
+  ADR-0026/0028 layout constants. Journaled refinements, no ADR.
+- **Show the legend `L` in the data's units** (**B-0014**) — it is now in unit-cube path-length
+  (ADR-0030); needs a units convention (per-axis extents differ) + the `PlotAxes` extents plumbed
+  to the legend ⇒ a short ADR.
+- **Additional colormaps** beyond twilight + HSV (**B-0005**; would extend ADR-0014).
+- **Mathematical typesetting in labels** — the big item (**B-0015**; LaTeX-style math), building
+  on the deferred true-italic / mixed-font work (**B-0012**); likely its own milestone (**M9**)
+  with its own ADRs.
+- Also open: **B-0009** (declare a project LICENSE).
+
+Each item touching a public contract starts at ORIENT → CONTRACT with a new ADR (Proposed →
+Accepted) before code; the pure-appearance tweaks are journaled refinements (like D-0045). Eyeball
+the current legend: `DISPLAY=:1 ./build/debug/iv_view --input example_data/wf1.c64 --dims 150 150 150`.
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.
@@ -161,7 +171,7 @@ Accepted) before code. The legend's appearance is pure presentation — eyeball 
 - Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M8 complete & locked).
 - Contracts: `docs/adr/INDEX.md` — **ADR-0001…0031 Accepted** (0009 superseded by 0015;
   0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020; 0031 amends 0028/0029).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0047), Backlog B-0001…B-0012.
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0047), Backlog B-0001…B-0015.
 - Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
   makePlot); `iv_bench` (perf).

@@ -968,3 +968,39 @@ the same day. Future entries prepend above.)
   mixed fonts).
 - **Contract link:** would extend ADR-0023/0025 (glyph overlay) + amend D-0035 (bundle
   BookItalic); no `LegendSpec`/`PlotOptions` API change (upright → italic is rendering-only).
+
+### B-0013 — Legend & label visual polish (placement, label placement, sizes)
+- **Origin:** maintainer review, 2026-06-20 (graphics-polish pass).
+- **What:** Tune the color legend's **placement** (the default `LegendSpec::rectNdc` panel
+  position/size), the **placement of its labels** (the `|·|` / `arg(·)` captions, the −π/0/π
+  phase labels, the magnitude tick values, the `L` label), and **various label sizes** across the
+  plot (title, axis labels, tick labels, legend). Pure presentation.
+- **Why deferred:** appearance refinement, batched into the polish pass; no contract impact.
+- **Revisit when:** the next session (the visual-polish pass).
+- **Contract link:** none (presentation; ADR-0026 annotation constants + ADR-0028 legend
+  constants — journaled refinements, not contract changes).
+
+### B-0014 — Display the legend thickness `L` in the data's physical units
+- **Origin:** maintainer review, 2026-06-20.
+- **What:** The legend's `L = …` label (ADR-0030) shows the reference thickness in unit-cube
+  path-length units (`[0,1]³`, where 1 = a full traversal). Show it instead in the **data's
+  physical units** (the volume maps `[0,1]³` to the `PlotAxes` ranges). Open question: the
+  per-axis data extents differ, so "thickness in data units" needs a convention (a chosen axis /
+  the geometric mean of the extents / per-axis).
+- **Why deferred:** needs a units convention + the `PlotAxes` extents plumbed to the legend;
+  batched into polish.
+- **Revisit when:** the visual-polish pass.
+- **Contract link:** would refine ADR-0030's thickness label (and likely add a data-extent input
+  to `LegendSpec` / the facade) — a contract change ⇒ a short ADR.
+
+### B-0015 — Mathematical typesetting in labels (LaTeX-style math)
+- **Origin:** maintainer review, 2026-06-20 (the "big item"); LaTeX math deferred since M6
+  (D-0033).
+- **What:** Render mathematical notation in labels (title, axis labels, legend captions) —
+  superscripts/subscripts, fractions, radicals, symbols, proper math italic — i.e. LaTeX-style
+  math typesetting. Builds on mixed-font/multi-atlas glyph support (**B-0012**, a prerequisite)
+  and the NewCM math face.
+- **Why deferred:** a substantial feature — the founding arc (M1–M8) delivered the usable
+  plotting library; math typesetting is the next major capability, likely its own milestone (M9).
+- **Revisit when:** after the appearance polish; scope as a milestone with its own ADRs.
+- **Contract link:** extends the text layer (ADR-0022/0023) substantially; new math-layout ADRs.

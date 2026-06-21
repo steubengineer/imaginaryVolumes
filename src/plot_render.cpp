@@ -36,6 +36,7 @@ iv::LegendSpec legendFor(const PlotOptions& o, iv::MagnitudeRange range) {
     ls.densityScale = o.densityScale;
     ls.logDecades = o.logDecades;
     ls.referenceThickness = o.legendThickness; // ADR-0030
+    ls.fieldName = o.fieldName;                 // ADR-0031
     ls.magnitudeLabel = o.magnitudeLabel;
     ls.phaseLabel = o.phaseLabel;
     return ls;

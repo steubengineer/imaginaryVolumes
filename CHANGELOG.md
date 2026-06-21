@@ -8,6 +8,13 @@ tests. Newest milestone first.
 
 Bug fixes and refinements to the M8 legend, after the maintainer eyeballed it in the viewer.
 
+- **Caller-named legend field** (ADR-0031; D-0047): the legend captions derive from a `fieldName`
+  (default `"f"`) — `|f|` / `arg(f)`, or `|Phi|` / `arg(Phi)` — distinct from the plot title.
+  Additive: `LegendSpec`/`PlotOptions` keep `magnitudeLabel`/`phaseLabel` as overrides (now
+  default empty); derivation lives on `LegendSpec::magnitudeCaption()`/`phaseCaption()`. The field
+  renders **upright** — true CM italic is deferred (**B-0012**: needs mixed-font/multi-atlas glyph
+  support; the overlay is single-atlas and NCM-Book has no italic). **Teeth:** string equality on
+  the derived captions (`"|Phi|"`, `"arg(Phi)"`, override precedence, empty → empty).
 - **Thickness-corrected opacity** (ADR-0030, extends ADR-0020; D-0046): the volume accumulates
   opacity along each ray, so the per-sample legend read far more transparent than the render. The
   swatch alpha is now `accumulatedOpacity(a, L) = 1 − (1−a)^(256·L)` — the ADR-0020 accumulation

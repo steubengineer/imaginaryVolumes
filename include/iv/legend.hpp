@@ -29,8 +29,26 @@ struct LegendSpec {
     // per-sample legend (ADR-0028). Default 0.1 (a soft, readable slab; 1.0 = full traversal).
     float referenceThickness{0.1f};
 
-    std::string magnitudeLabel{"|z|"};   // caption above the bar (the vertical axis)
-    std::string phaseLabel{"arg z"};     // caption below the bar (the horizontal axis)
+    // The field name (e.g. "Phi") drives the captions |fieldName| (magnitude, above the bar) and
+    // arg(fieldName) (phase, below) — distinct from the verbose plot title (PlotAxes::title).
+    // Override either caption directly via magnitudeLabel / phaseLabel (the escape hatch). The
+    // field name renders upright; true italic is deferred (ADR-0031 / B-0012).
+    std::string fieldName{"f"};
+    std::string magnitudeLabel{}; // explicit magnitude caption; empty => derive "|" fieldName "|"
+    std::string phaseLabel{};     // explicit phase caption;     empty => derive "arg(" fieldName ")"
+
+    // Resolved captions (ADR-0031): the explicit override if set, else derived from fieldName
+    // (empty when both are empty -> that caption is not drawn).
+    [[nodiscard]] std::string magnitudeCaption() const {
+        return !magnitudeLabel.empty() ? magnitudeLabel
+               : fieldName.empty()     ? std::string{}
+                                       : "|" + fieldName + "|";
+    }
+    [[nodiscard]] std::string phaseCaption() const {
+        return !phaseLabel.empty() ? phaseLabel
+               : fieldName.empty() ? std::string{}
+                                   : "arg(" + fieldName + ")";
+    }
 
     // Swatch rectangle in NDC = {left, top, right, bottom}, Vulkan clip space (y-down, so
     // top < bottom). Default: a panel on the right of the frame, vertically centered. The

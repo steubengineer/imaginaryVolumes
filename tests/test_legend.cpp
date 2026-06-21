@@ -27,6 +27,28 @@ using iv::vk::Renderer;
 using iv::vk::RenderParams;
 using iv::vk::Volume;
 
+TEST_CASE("Legend: field name derives the captions; explicit labels override (ADR-0031)",
+          "[legend]") {
+    iv::LegendSpec s; // default fieldName "f", empty overrides
+    CHECK(s.magnitudeCaption() == "|f|");
+    CHECK(s.phaseCaption() == "arg(f)");
+
+    s.fieldName = "Phi";
+    CHECK(s.magnitudeCaption() == "|Phi|");
+    CHECK(s.phaseCaption() == "arg(Phi)");
+
+    // An explicit label overrides only its own caption (the escape hatch).
+    s.magnitudeLabel = "|psi| (a.u.)";
+    CHECK(s.magnitudeCaption() == "|psi| (a.u.)");
+    CHECK(s.phaseCaption() == "arg(Phi)");
+
+    // Empty field name + empty overrides -> no captions.
+    iv::LegendSpec e;
+    e.fieldName.clear();
+    CHECK(e.magnitudeCaption().empty());
+    CHECK(e.phaseCaption().empty());
+}
+
 TEST_CASE("Legend: buildLegend populates screen channels + labels and honors show", "[legend]") {
     auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
     REQUIRE(shaper.has_value());

@@ -34,8 +34,9 @@ namespace iv {
 struct PlotOptions {
     PlotAxes axes{};                     // box / ticks / labels / title (ADR-0024)
     bool showLegend{true};               // the phase x magnitude legend (ADR-0028)
-    std::string magnitudeLabel{"|z|"};
-    std::string phaseLabel{"arg z"};
+    std::string fieldName{"f"};          // names the field -> legend captions |f| / arg(f) (ADR-0031)
+    std::string magnitudeLabel{};        // override the magnitude caption (empty => derive from fieldName)
+    std::string phaseLabel{};            // override the phase caption (empty => derive from fieldName)
 
     std::uint32_t colormapMode{0};       // ADR-0014: 0 = twilight LUT, 1 = HSV
     std::uint32_t opacityMode{0};        // ADR-0013: 0 = linear, 1 = logarithmic

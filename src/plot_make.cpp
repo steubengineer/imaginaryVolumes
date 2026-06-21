@@ -29,6 +29,7 @@ struct PlotState {
     iv::text::Shaper shaper;
     iv::PlotAxes axes;
     iv::MagnitudeRange range;
+    std::string fieldName;
     std::string magnitudeLabel;
     std::string phaseLabel;
     bool showLegend;
@@ -66,8 +67,8 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
     }
 
     auto state = std::make_shared<PlotState>(PlotState{std::move(*shaper), options.axes, range,
-                                                       options.magnitudeLabel, options.phaseLabel,
-                                                       options.showLegend});
+                                                       options.fieldName, options.magnitudeLabel,
+                                                       options.phaseLabel, options.showLegend});
     viewer->setOnFrame([state](iv::vk::Overlay& ov, const iv::vk::RenderParams& cam,
                                std::uint32_t w, std::uint32_t h) {
         iv::text::buildAnnotations(ov, state->axes, cam, w, h, state->shaper); // clears + box/axes
@@ -79,6 +80,7 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
             ls.densityScale = cam.densityScale;
             ls.logDecades = cam.logDecades;
             ls.referenceThickness = cam.legendThickness; // live thickness (ADR-0030)
+            ls.fieldName = state->fieldName;              // ADR-0031
             ls.magnitudeLabel = state->magnitudeLabel;
             ls.phaseLabel = state->phaseLabel;
             iv::text::buildLegend(ov, ls, w, h, state->shaper); // appends the screen legend

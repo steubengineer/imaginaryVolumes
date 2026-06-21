@@ -133,8 +133,8 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
         centeredLabel(ov, sh, plbl[k], pxX(x),
                       pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + sh.pixelSize(), fbW, fbH);
     }
-    if (!spec.phaseLabel.empty()) {
-        centeredLabel(ov, sh, spec.phaseLabel, pxX(0.5f * (xL + xR)),
+    if (const std::string ph = spec.phaseCaption(); !ph.empty()) {
+        centeredLabel(ov, sh, ph, pxX(0.5f * (xL + xR)),
                       pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 2.4f * sh.pixelSize(), fbW, fbH);
     }
 
@@ -173,8 +173,8 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
             }
         }
     }
-    if (!spec.magnitudeLabel.empty()) {
-        centeredLabel(ov, sh, spec.magnitudeLabel, pxX(0.5f * (xL + xR)),
+    if (const std::string mg = spec.magnitudeCaption(); !mg.empty()) {
+        centeredLabel(ov, sh, mg, pxX(0.5f * (xL + xR)),
                       pxY(yTop) - kPhaseLabelPadPx - 0.4f * sh.pixelSize(), fbW, fbH);
     }
 

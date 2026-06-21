@@ -34,11 +34,13 @@ ticked, labeled axes (M7), a **phase × magnitude legend** (M8), and a **one-cal
 overlay reset (`Overlay::clear()` — was accumulating), log **decade ticks** (B-0011), and
 **thickness-corrected opacity** (ADR-0030; `iv::accumulatedOpacity(a, L)` + the `[`/`]` thickness
 knob with an on-legend `L = …` label). Default reference thickness `L = 0.1` (soft; tunable).
+Plus **caller-named field** captions (ADR-0031; D-0047): `fieldName` (default `"f"`) →
+`|f|` / `arg(f)`, with `magnitudeLabel`/`phaseLabel` overrides — upright; true italic → B-0012.
 
-Decisions D-0001…D-0046; Backlog B-0005 (more colormaps), B-0006 (VMA), B-0009 (LICENSE) open;
+Decisions D-0001…D-0047; Backlog B-0005 (more colormaps), B-0006 (VMA), B-0009 (LICENSE), B-0012 (true italic field name) open;
 B-0007/0008/0010/0011 resolved. ADR index current
-(**ADR-0001…0030 Accepted**; 0009 superseded by 0015). Gates: full suite **768/79**;
-ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **768/79**;
+(**ADR-0001…0031 Accepted**; 0009 superseded by 0015). Gates: full suite **776/80**;
+ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **776/80**;
 text-free (transfer core, no HarfBuzz) **580/59**; no HarfBuzz type in any public header;
 `iv_view` (via makePlot) validation-CLEAN on the vortex and a 150³ dataset.
 
@@ -94,6 +96,10 @@ Accepted) before code. The legend's appearance is pure presentation — eyeball 
   uncorrected). The viewer drives `L` via the **render-inert** `RenderParams::legendThickness` +
   `[`/`]` (a `[vk][renderer]` test pins that the ray-march ignores it). The thickness label uses
   plain **`L`** — NCM-Book lacks U+2113 `ℓ` (a `[legend]` test pins this; don't restore `ℓ`).
+  Captions derive from `LegendSpec::fieldName` (default `"f"` → `|f|` / `arg(f)`, via
+  `magnitudeCaption()`/`phaseCaption()`; `magnitudeLabel`/`phaseLabel` override — ADR-0031),
+  rendered **upright**; true CM italic is deferred (**B-0012** — needs mixed-font/multi-atlas
+  glyphs; NCM-Book has no italic).
 - **Facade targets / isolation** (ADR-0029): `renderPlot` is in **`iv_text`** (needs text,
   not GLFW); `makePlot` is in **`iv_plot`** (gated on `IV_BUILD_VIEWER AND IV_BUILD_TEXT`).
   Core `iv` / tests / `iv_bench` still build with both gates OFF (the isolation gates). The
@@ -153,9 +159,9 @@ Accepted) before code. The legend's appearance is pure presentation — eyeball 
 
 ## Pointers
 - Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M8 complete & locked).
-- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0030 Accepted** (0009 superseded by 0015;
-  0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0046), Backlog B-0001…B-0011.
+- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0031 Accepted** (0009 superseded by 0015;
+  0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020; 0031 amends 0028/0029).
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0047), Backlog B-0001…B-0012.
 - Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
   makePlot); `iv_bench` (perf).

@@ -151,7 +151,7 @@ if(IV_BUILD_TEXT)
 
     add_library(iv_text STATIC
         src/text/shaper.cpp src/text/bundled_font.cpp src/text/text_layout.cpp
-        src/text/annotations.cpp src/text/legend_builder.cpp ${IV_FONT_GEN})
+        src/text/annotations.cpp src/text/legend_builder.cpp src/plot_render.cpp ${IV_FONT_GEN})
     add_library(iv::text ALIAS iv_text)
     # iv is PUBLIC: shaper.hpp includes iv/error.hpp. harfbuzz_core is PRIVATE:
     # HarfBuzz is hidden behind the Shaper (ADR-0004), only shaper.cpp needs it.
@@ -202,12 +202,21 @@ if(IV_BUILD_VIEWER)
     target_link_libraries(iv_viewer PUBLIC iv glfw)
     target_link_libraries(iv_viewer PRIVATE iv_warnings)
 
+    # High-level plot facade — makePlot (ADR-0029): needs the viewer AND text, so it lives in
+    # its own target. renderPlot (headless) is in iv_text. Both gates stay green with OFF.
+    if(IV_BUILD_TEXT)
+        add_library(iv_plot STATIC src/plot_make.cpp)
+        add_library(iv::plot ALIAS iv_plot)
+        target_link_libraries(iv_plot PUBLIC iv_viewer iv_text)
+        target_link_libraries(iv_plot PRIVATE iv_warnings)
+    endif()
+
     add_executable(iv_view examples/view_demo.cpp)
     target_link_libraries(iv_view PRIVATE iv_viewer iv_warnings)
-    # With text built, the viewer demo shows a labeled, camera-tracking plot
-    # (ADR-0024/0026); otherwise it falls back to a simple line/quad overlay.
+    # With text built, the viewer demo shows a labeled, camera-tracking plot with a legend
+    # (ADR-0024/0026/0028) via the makePlot facade (ADR-0029); otherwise a simple overlay.
     if(IV_BUILD_TEXT)
-        target_link_libraries(iv_view PRIVATE iv_text)
+        target_link_libraries(iv_view PRIVATE iv_plot iv_text)
         target_compile_definitions(iv_view PRIVATE IV_VIEW_TEXT)
     endif()
 endif()

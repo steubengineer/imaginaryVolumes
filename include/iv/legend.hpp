@@ -29,11 +29,13 @@ struct LegendSpec {
     // per-sample legend (ADR-0028). Default 0.1 (a soft, readable slab; 1.0 = full traversal).
     float referenceThickness{0.1f};
 
-    // The field name (e.g. "Phi") drives the captions |fieldName| (magnitude, above the bar) and
+    // The field name drives the captions |fieldName| (magnitude, above the bar) and
     // arg(fieldName) (phase, below) — distinct from the verbose plot title (PlotAxes::title).
-    // Override either caption directly via magnitudeLabel / phaseLabel (the escape hatch). The
-    // field name renders upright; true italic is deferred (ADR-0031 / B-0012).
-    std::string fieldName{"f"};
+    // It is a general label string and may carry inline `$…$` math (ADR-0033); the default
+    // `"$f$"` renders the field in true math italic (so the captions read |𝑓| / arg(𝑓)). For an
+    // upright field set "f"; for Greek, `"$\\Phi$"`. Override a whole caption via magnitudeLabel /
+    // phaseLabel (the escape hatch).
+    std::string fieldName{"$f$"};
     std::string magnitudeLabel{}; // explicit magnitude caption; empty => derive "|" fieldName "|"
     std::string phaseLabel{};     // explicit phase caption;     empty => derive "arg(" fieldName ")"
 

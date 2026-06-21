@@ -1,11 +1,12 @@
 # HANDOFF.md — imaginaryVolumes
 
 **Last updated:** 2026-06-21 by the M9 session (Claude / Opus 4.8)
-**Active milestone:** **M9 — Mathematical typesetting in labels (in progress).** Inline
+**Active milestone:** **M9 — Mathematical typesetting in labels — COMPLETE & locked.** Inline
 LaTeX-subset math in labels via an owned subset parser + OpenType-MATH box layout over
-`hb_ot_math_*` (no TeX engine; D-0048). Two Accepted ADRs: **ADR-0032 (mixed-font substrate) —
-DONE & committed**; **ADR-0033 (inline `$…$` math model + subset + layout) — NEXT, not started.**
-(The founding arc M1–M8 is complete & locked.)
+`hb_ot_math_*` (no TeX engine; D-0048): **ADR-0032 (mixed-font substrate)** + **ADR-0033 (inline
+`$…$` math model, subset & layout)**, both Accepted. Caller labels (title/axis/unit/legend
+captions) now render publication-quality math. (Founding arc M1–M8 also complete & locked.) Next
+work is the deferred visual-polish backlog; a new milestone (if any) starts at ORIENT → CONTRACT.
 
 ## Current State
 The library does the full job end to end: ingest a complex field (`std::complex<float|
@@ -14,37 +15,31 @@ ADR-0013/0020/0027, arg→colormap ADR-0014) → offscreen readback **and** an i
 viewer, with a perf contract (15.3 ms / ~65 FPS @ 512³→720p on the RTX 4070). Over that:
 crisp Unicode text (vendored HarfBuzz + Slug GPU glyphs, M6), a world-space bounding box +
 ticked, labeled axes (M7), a **phase × magnitude legend** (M8), and a **one-call facade**
-(M8). All M1–M8 complete & locked (MILESTONES.md; CHANGELOG.md).
+(M8), and **inline LaTeX math in labels** (M9). All M1–M9 complete & locked (MILESTONES.md;
+CHANGELOG.md).
 
-**M8 (legend/colorbar & high-level plot API) — Complete & locked** (CHANGELOG § M8). Two ADRs:
-- **ADR-0028** (84c5950) — **legend**. Pure-host transfer evaluators (`include/iv/transfer.hpp`:
-  `phaseColor`, `transferNormalized`, `transferOpacity`) mirror the shader's arg→color /
-  abs→opacity and are the single source the legend draws through (mode-0 colormap shares the
-  committed `kTwilightLut` with the GPU). `Overlay` gained screen-space `screenLines/
-  screenTriangles` (identity transform, Vulkan clip y-down — **D-0044**), drawn in both paths.
-  `iv::LegendSpec` (core `iv`) + `iv::text::buildLegend` (`iv_text`) draw a **2-D swatch**
-  (phase across, opacity up) + border + −π/0/π phase ticks + nice-number magnitude ticks +
-  labels; it **appends** so it composes with `buildAnnotations`.
-- **ADR-0029** (64e8c2d) — **facade**. `iv::PlotOptions` (single source of transfer state);
-  `iv::renderPlot` (headless → labeled image; in `iv_text`) and `iv::makePlot` (returns a
-  configured, not-yet-running `Viewer`; new **`iv_plot`** target, needs viewer + text). `iv_view`
-  now builds its labeled plot via `makePlot`; the per-frame closure rebuilds box/axes + legend
-  from the LIVE params so hotkeys update the legend. Decisions D-0042…D-0044.
+**M9 (mathematical typesetting in labels) — Complete & locked** (CHANGELOG § M9). Two ADRs:
+- **ADR-0032** (63a2a2a) — **mixed-font substrate**. Multiple faces in one overlay via a single
+  MERGED Slug atlas with rebased `glyphLoc` (renderer/`GlyphVertex` unchanged). New: bundled GFL
+  `NewCM10-BookItalic` + `NewCMMath-Book` (`bundledFontItalic()`/`bundledFontMath()`),
+  `iv::text::FontSet` (roman/italic/math Shapers), `iv::text::MixedGlyphs` (build → `finish()`).
+  Resolves **B-0012**.
+- **ADR-0033** (7ce38be → stage-4) — **inline `$…$` math**. `iv::text::math` parser (`splitLabel`/
+  `parse`) + OpenType-MATH box layout (`math_layout`) over a Shaper math API (`mathConstant`,
+  `glyphVariant`, `mathItalicCorrection`, `mathTopAccentAttachment`, …) — all metrics from the
+  font, no hardcoded TeX constants. Subset: scripts, `\frac`, `\sqrt[n]`, `\hat`/`\dot`/`\overline`,
+  stretchy `\left…\right` + bra–ket, Greek/symbol/operator macros, `\mathrm`/`\mathbf`/`\mathit`,
+  spacing. `appendLabel`/`measureLabel` bridge labels in; `buildAnnotations`/`buildLegend` take a
+  `FontSet`+shared `MixedGlyphs`. Legend `fieldName` default → `"$f$"` (math italic; amends
+  ADR-0031). Resolves **B-0015**; follow-on B-0016 (legend sci-notation).
 
-**Post-M8 legend polish** (CHANGELOG § Post-M8): truly-transparent swatch (D-0045), per-frame
-overlay reset (`Overlay::clear()` — was accumulating), log **decade ticks** (B-0011), and
-**thickness-corrected opacity** (ADR-0030; `iv::accumulatedOpacity(a, L)` + the `[`/`]` thickness
-knob with an on-legend `L = …` label). Default reference thickness `L = 0.1` (soft; tunable).
-Plus **caller-named field** captions (ADR-0031; D-0047): `fieldName` (default `"f"`) →
-`|f|` / `arg(f)`, with `magnitudeLabel`/`phaseLabel` overrides — upright; true italic → B-0012.
-
-Decisions D-0001…D-0047; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
-(LICENSE), B-0012 (true italic field name), B-0013 (legend/label visual polish), B-0014 (legend
-`L` in data units), B-0015 (math typesetting); B-0007/0008/0010/0011 resolved. ADR index current
-(**ADR-0001…0031 Accepted**; 0009 superseded by 0015). Gates: full suite **776/80**;
-ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **776/80**;
-text-free (transfer core, no HarfBuzz) **580/59**; no HarfBuzz type in any public header;
-`iv_view` (via makePlot) validation-CLEAN on the vortex and a 150³ dataset.
+Decisions D-0001…D-0048; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
+(LICENSE), B-0013 (legend/label visual polish — axis labels overlap tick numbers), B-0014 (legend
+`L` in data units), B-0016 (legend sci-notation); B-0007/0008/0010/0011/0012/0015 resolved. ADR
+index current (**ADR-0001…0033 Accepted**; 0009 superseded by 0015). Gates: full suite
+**1313/100**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
+text-free (transfer core, no HarfBuzz) builds; no HarfBuzz type in any public header; `iv_view`
+(via makePlot) present-path validation-CLEAN.
 
 ## Test data (gitignored)
 `example_data/` (NOT tracked — `.gitignore`: `/example_data/`, `*.c64`): 11 heavy raw
@@ -53,39 +48,21 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**ADR-0033 (inline math) — NOT STARTED.** The M9 substrate (ADR-0032) is done, verified, and
-committed; the tree is clean at that checkpoint. Next is the math layer itself. No partial ADR-0033
-code exists yet.
+**Nothing in flight.** M9 is closed; the tree is clean at the M9 commits. Full suite **1313/100**;
+ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN.
 
 ## Next Action
-**Implement ADR-0033 — inline `$…$` math labels** (subset parser + OpenType-MATH box layout). It
-draws through the ADR-0032 substrate now in place. Suggested staging:
-1. **Tokenizer / text-math split** — split a label on unescaped `$` (`\$` literal; unmatched `$` →
-   literal + diagnostic, no throw). Text spans → `MixedGlyphs::appendRun(Face::Roman, …)`.
-2. **Subset parser** — recursive descent over the ADR-0033 §2 grammar (atoms; `^`/`_`; `\frac`;
-   `\sqrt[n]`; `\hat`/`\dot`/`\overline`; `\left…\right` + bra–ket; `{}`; `\mathrm`/`\mathbf`/
-   `\mathit`; spacing; the curated Greek/symbol/operator macro table) → a box tree. Unknown CS →
-   literal fallback + diagnostic.
-3. **OpenType-MATH layout** — box constructors (hlist, fraction, scripts, radical, stretchy
-   delimiter, accent, overline) taking EVERY constant from `hb_ot_math_get_constant` /
-   `_glyph_italics_correction` / `_glyph_kerning` / `_glyph_variants` / `_glyph_assembly` (NO
-   hardcoded TeX constants — the metrics-from-font invariant). Style chain display→…→scriptscript.
-   Emit positioned glyphs via `MixedGlyphs::appendGlyph(face, glyphId, x, y, size, …)`.
-4. **Label integration** — route caller-supplied labels (PlotAxes title/label/unit; LegendSpec
-   `fieldName`/overrides) through the math-aware path; migrate `buildAnnotations`/`buildLegend`
-   from `appendText` to `MixedGlyphs` (roman-only path is byte-identical — the ADR-0032 backward-
-   compat test pins this). Set `LegendSpec::fieldName` default → `"$f$"` (amends ADR-0031).
-5. **Tests with teeth** (ADR-0033 §Verification): split/escape; parser structure; layout-from-font
-   (zero a MATH constant / skip italic correction → positions move → red); no-`$` backward-compat
-   byte-identity; mixed-face usage; `\foo` fallback; end-to-end math-labeled render.
+M9 is achieved and locked. Remaining work is the deferred visual-polish backlog (no math left):
+- **B-0013** legend/label **placement & sizes** — eyeballing the M9 plot, **axis labels overlap
+  the tick-value numbers** (e.g. "y (nm)" over "0.0"); the outward offsets want tuning now that
+  labels can be wider. Pure presentation (ADR-0026 constants); journaled refinement, no ADR.
+- **B-0016** legend magnitude-axis **scientific notation** (`1×10⁻³`) — now unblocked: reuse the
+  M9 math layout to typeset the generated mantissa×10^exp (a `legend_builder` change).
+- **B-0014** legend `L` in data units (short ADR); **B-0005** more colormaps (extends ADR-0014);
+  **B-0009** project LICENSE.
 
-Needs HarfBuzz's `hb_ot_math_*` (confirmed compiled into the vendored `harfbuzz.cc`). Probe the
-math face from `iv::text::FontSet::create(px).shaper(Face::Math)`. **B-0016** (legend `1×10⁻³`
-tick notation) is a deferred follow-on AFTER the engine exists — not part of ADR-0033.
-
-### Deferred (post-M9) maintainer polish agenda (2026-06-20)
-- **B-0013** legend/label placement & sizes (presentation); **B-0014** legend `L` in data units
-  (short ADR); **B-0005** more colormaps; **B-0009** project LICENSE; **B-0016** legend sci-notation.
+Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/debug/iv_view
+--input example_data/wf1.c64 --dims 150 150 150` (its legend field name is now the math-italic `$f$`).
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.
@@ -148,6 +125,18 @@ tick notation) is a deferred follow-on AFTER the engine exists — not part of A
   `appendText`(roman) and `MixedGlyphs`(roman) on ONE overlay (double-stores roman's atlas). Faces:
   `FontSet::create(px)` → roman/italic/math (`bundledFont()`/`Italic()`/`Math()`); the math face
   carries the OpenType MATH table for ADR-0033.
+- **Inline math (ADR-0033):** every caller label is parsed as text + `$…$` math
+  (`iv::text::math::splitLabel`/`parse` → a box tree; `math::layout` → glyphs via `MixedGlyphs` +
+  rules via `overlay.screenTriangles`). `appendLabel`/`measureLabel` (math_layout) are the bridge;
+  `buildAnnotations`/`buildLegend` take a `FontSet`+shared `MixedGlyphs` and the caller calls
+  `glyphs.finish(ov)` ONCE (one merged atlas). **All math metrics come from the font's MATH table**
+  via the Shaper math API (`mathConstant`, `glyphVariant`, `mathItalicCorrection`,
+  `mathTopAccentAttachment`, …) — NEVER hardcode a TeX constant (a `[math]` test pins the fraction
+  rule to the font axis; another pins variant stretch). Box coords are baseline-relative **+y up**;
+  the public `layout()`/`appendLabel()` flip to the top-left-origin framebuffer at emit. A `$`-free
+  label routes to `appendRun(Roman)` and is byte-identical to the old path (a `[math]` test pins
+  it). Subset extension point: the macro table in `math_parse.cpp` (`symbolTable()`). The legend
+  `fieldName` default is `"$f$"` (math italic); the caption tests expect `"|$f$|"`/`"arg($f$)"`.
 - **`glslc` is a required build tool** (ADR-0011/D-0022). Shaders in `shaders/`; SPIR-V
   embedded (regenerated each build). The colormap LUT is committed data
   (`include/iv/vk/colormap_lut.hpp`) — regenerate with `tools/gen_colormap.py` if it changes;
@@ -192,10 +181,10 @@ tick notation) is a deferred follow-on AFTER the engine exists — not part of A
   `IV_VULKAN_DEVICE_INDEX` forces a device.
 
 ## Pointers
-- Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M8 complete & locked).
-- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0031 Accepted** (0009 superseded by 0015;
+- Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M9 complete & locked).
+- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0033 Accepted** (0009 superseded by 0015;
   0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020; 0031 amends 0028/0029).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0047), Backlog B-0001…B-0015.
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0048), Backlog B-0001…B-0016.
 - Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
   makePlot); `iv_bench` (perf).

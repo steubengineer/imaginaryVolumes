@@ -527,4 +527,30 @@ Metrics layout(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, FontSet& fonts, co
     return {b.width, b.ascent, b.descent};
 }
 
+float appendLabel(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, std::string_view label,
+                  float penXpx, float penYpx, std::uint32_t fbWidth, std::uint32_t fbHeight,
+                  float pixelSize, const std::array<float, 4>& color) {
+    float x = penXpx;
+    for (const LabelSpan& sp : splitLabel(label)) {
+        if (sp.math) {
+            const List tree = parse(sp.text);
+            const Metrics m = layout(glyphs, overlay, glyphs.fonts(), tree, x, penYpx, fbWidth,
+                                     fbHeight, pixelSize, color);
+            x += m.width;
+        } else {
+            x += glyphs.appendRun(Face::Roman, sp.text, x, penYpx, fbWidth, fbHeight,
+                                  {color, pixelSize});
+        }
+    }
+    return x - penXpx;
+}
+
+float measureLabel(FontSet& fonts, std::string_view label, float pixelSize) {
+    // Dry layout into throwaway sinks (the framebuffer size only affects the discarded NDC
+    // positions, not the px advance). Glyph encoding is cached in the shapers (harmless).
+    MixedGlyphs scratch(fonts);
+    iv::vk::Overlay sink;
+    return appendLabel(scratch, sink, label, 0.0f, 0.0f, 1u, 1u, pixelSize, {1.0f, 1.0f, 1.0f, 1.0f});
+}
+
 } // namespace iv::text::math

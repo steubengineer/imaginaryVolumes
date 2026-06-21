@@ -1,7 +1,7 @@
 #include "iv/plot_axes.hpp"
 #include "iv/text/annotations.hpp"
-#include "iv/text/bundled_font.hpp"
-#include "iv/text/shaper.hpp"
+#include "iv/text/font_set.hpp"
+#include "iv/text/text_layout.hpp"
 #include "iv/vk/context.hpp"
 #include "iv/vk/renderer.hpp"
 #include "iv/vk/view_projection.hpp"
@@ -20,9 +20,19 @@ using iv::Axis;
 using iv::Dim;
 using iv::PlotAxes;
 using iv::ThroughAxis;
-using iv::text::Shaper;
+using iv::text::FontSet;
+using iv::text::MixedGlyphs;
 
 namespace {
+
+// Build annotations through the M9 mixed-font path (ADR-0032/0033) and finish the glyph atlas,
+// matching the old single-Shaper buildAnnotations call shape (fonts last).
+void annotate(iv::vk::Overlay& ov, const PlotAxes& axes, const iv::vk::RenderParams& cam,
+              std::uint32_t W, std::uint32_t H, FontSet& fonts) {
+    MixedGlyphs glyphs(fonts);
+    iv::text::buildAnnotations(ov, glyphs, axes, cam, W, H);
+    glyphs.finish(ov);
+}
 
 iv::vk::RenderParams cubeCamera() {
     iv::vk::RenderParams p;
@@ -104,14 +114,14 @@ std::vector<std::complex<float>> emptyField(iv::GridDims d) {
 // ADR-0026: the builder fills an Overlay from the model + camera, honoring every
 // visibility toggle, with the ADR-0012 view-projection as the transform.
 TEST_CASE("buildAnnotations honors the model and visibility toggles", "[annot]") {
-    auto shaper = Shaper::create(iv::text::bundledFont(), 18.0f);
-    REQUIRE(shaper);
+    auto fonts = FontSet::create(18.0f);
+    REQUIRE(fonts);
     const std::uint32_t W = 512;
     const std::uint32_t H = 512;
     const auto cam = cubeCamera();
 
     iv::vk::Overlay full;
-    iv::text::buildAnnotations(full, labeledAxes(), cam, W, H, *shaper);
+    annotate(full, labeledAxes(), cam, W, H, *fonts);
     // Transform is the view-projection (not identity).
     CHECK(full.transform == iv::vk::viewProjection(cam, static_cast<float>(W) / H));
     CHECK(full.lines.size() >= 24);      // at least the 12 box edges (2 verts each)
@@ -123,7 +133,7 @@ TEST_CASE("buildAnnotations honors the model and visibility toggles", "[annot]")
         a.boundingBox = false;
         a.boxTicks = false;
         iv::vk::Overlay ov;
-        iv::text::buildAnnotations(ov, a, cam, W, H, *shaper);
+        annotate(ov, a, cam, W, H, *fonts);
         CHECK(ov.lines.empty());          // no box, no ticks
         CHECK_FALSE(ov.glyphs.empty());   // labels still there
     }
@@ -133,7 +143,7 @@ TEST_CASE("buildAnnotations honors the model and visibility toggles", "[annot]")
         a.axisLabels = false;
         a.showTitle = false;
         iv::vk::Overlay ov;
-        iv::text::buildAnnotations(ov, a, cam, W, H, *shaper);
+        annotate(ov, a, cam, W, H, *fonts);
         CHECK(ov.glyphs.empty());
         CHECK(ov.glyphAtlas.empty());
         CHECK_FALSE(ov.lines.empty());    // box/ticks remain
@@ -147,14 +157,14 @@ TEST_CASE("buildAnnotations honors the model and visibility toggles", "[annot]")
         a.showTitle = false;
         a.throughAxes.push_back(ThroughAxis{Dim::X, {0.0, 0.0, 0.0}, true, false});
         iv::vk::Overlay ov;
-        iv::text::buildAnnotations(ov, a, cam, W, H, *shaper);
+        annotate(ov, a, cam, W, H, *fonts);
         CHECK(ov.lines.size() == 2u);     // exactly the one through-axis line
     }
     SECTION("an empty model draws nothing") {
         PlotAxes a;
         a.boundingBox = a.boxTicks = a.tickLabels = a.axisLabels = a.showTitle = false;
         iv::vk::Overlay ov;
-        iv::text::buildAnnotations(ov, a, cam, W, H, *shaper);
+        annotate(ov, a, cam, W, H, *fonts);
         CHECK(ov.empty());
     }
 }
@@ -164,8 +174,8 @@ TEST_CASE("buildAnnotations honors the model and visibility toggles", "[annot]")
 // teeth: inverting the down-and-out edge choice puts labels on an inner edge -> glyph
 // quads land inside the silhouette -> this check goes red.
 TEST_CASE("annotation labels stay outside the projected box silhouette", "[annot]") {
-    auto shaper = Shaper::create(iv::text::bundledFont(), 18.0f);
-    REQUIRE(shaper);
+    auto fonts = FontSet::create(18.0f);
+    REQUIRE(fonts);
     const std::uint32_t W = 512;
     const std::uint32_t H = 512;
     const auto cam = cubeCamera();
@@ -175,7 +185,7 @@ TEST_CASE("annotation labels stay outside the projected box silhouette", "[annot
     a.boundingBox = false;
     a.boxTicks = false;
     iv::vk::Overlay ov;
-    iv::text::buildAnnotations(ov, a, cam, W, H, *shaper);
+    annotate(ov, a, cam, W, H, *fonts);
     REQUIRE_FALSE(ov.glyphs.empty());
 
     const std::vector<Pt> hull = cubeSilhouette(ov.transform, W, H);
@@ -210,14 +220,14 @@ TEST_CASE("annotations render over the volume", "[annot][vk]") {
     const GridDims d{8, 8, 8};
     auto vol = Volume::create(*ctx, emptyField(d), d);
     REQUIRE(vol.has_value());
-    auto shaper = Shaper::create(iv::text::bundledFont(), 18.0f);
-    REQUIRE(shaper);
+    auto fonts = FontSet::create(18.0f);
+    REQUIRE(fonts);
 
     const std::uint32_t W = 384;
     const std::uint32_t H = 384;
     iv::vk::RenderParams p = cubeCamera();
     iv::vk::Overlay ov;
-    iv::text::buildAnnotations(ov, labeledAxes(), p, W, H, *shaper);
+    annotate(ov, labeledAxes(), p, W, H, *fonts);
     REQUIRE_FALSE(ov.lines.empty());
     REQUIRE_FALSE(ov.glyphs.empty());
 

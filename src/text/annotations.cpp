@@ -1,5 +1,6 @@
 #include "iv/text/annotations.hpp"
 
+#include "iv/text/math_layout.hpp" // appendLabel / measureLabel (math-aware labels, ADR-0033)
 #include "iv/text/text_layout.hpp"
 #include "iv/vk/view_projection.hpp"
 
@@ -107,30 +108,24 @@ void addLine(Overlay& ov, const Vec3& a, const Vec3& b, const Color& color) {
     ov.lines.push_back(OverlayVertex{{b[0], b[1], b[2]}, color});
 }
 
-float textWidth(Shaper& sh, std::string_view s) {
-    float w = 0.0f;
-    for (const auto& g : sh.shape(s)) {
-        w += g.xAdvance;
-    }
-    return w;
-}
-
 // Place `s` centered (horizontally) at pixel (cx, cy), vertically centered on cy, at
-// `pixelSize` px (the Slug atlas is size-independent, so any size uses the one shaper).
-void addCenteredLabel(Overlay& ov, Shaper& sh, std::string_view s, float cx, float cy,
+// `pixelSize` px. `s` is a math-aware label (inline `$…$` math, ADR-0033), appended to the
+// shared mixed-font builder `g`.
+void addCenteredLabel(Overlay& ov, MixedGlyphs& g, std::string_view s, float cx, float cy,
                       std::uint32_t fbW, std::uint32_t fbH, float pixelSize) {
-    const float w = textWidth(sh, s) * (pixelSize / sh.pixelSize()); // width at the render size
+    const float w = iv::text::math::measureLabel(g.fonts(), s, pixelSize);
     const float penX = cx - 0.5f * w;
     const float penY = cy + 0.35f * pixelSize; // approx vertical centering of caps
-    iv::text::appendText(ov, sh, s, penX, penY, fbW, fbH, {kLabelColor, pixelSize});
+    iv::text::math::appendLabel(g, ov, s, penX, penY, fbW, fbH, pixelSize, kLabelColor);
 }
 
 } // namespace
 
-void buildAnnotations(Overlay& ov, const PlotAxes& axes, const iv::vk::RenderParams& camera,
-                      std::uint32_t fbW, std::uint32_t fbH, Shaper& sh) {
+void buildAnnotations(Overlay& ov, MixedGlyphs& g, const PlotAxes& axes,
+                      const iv::vk::RenderParams& camera, std::uint32_t fbW, std::uint32_t fbH) {
     ov.clear(); // reset ALL channels incl. the screen-space legend ones, so a reused overlay
                 // (the viewer rebuilds one every frame) does not accumulate (ADR-0026/0028).
+    const float baseSize = g.fonts().pixelSize();
 
     const float aspect = fbH > 0u ? static_cast<float>(fbW) / static_cast<float>(fbH) : 1.0f;
     ov.transform = iv::vk::viewProjection(camera, aspect);
@@ -242,9 +237,9 @@ void buildAnnotations(Overlay& ov, const PlotAxes& axes, const iv::vk::RenderPar
                 if (px[2] <= 0.0f) {
                     continue;
                 }
-                addCenteredLabel(ov, sh, iv::formatTick(v, ticks.step),
+                addCenteredLabel(ov, g, iv::formatTick(v, ticks.step),
                                  px[0] + bestOut[0] * kTickLabelMargin,
-                                 px[1] + bestOut[1] * kTickLabelMargin, fbW, fbH, sh.pixelSize());
+                                 px[1] + bestOut[1] * kTickLabelMargin, fbW, fbH, baseSize);
             }
         }
         if (axes.axisLabels) {
@@ -254,9 +249,9 @@ void buildAnnotations(Overlay& ov, const PlotAxes& axes, const iv::vk::RenderPar
                     worldPoint(a, 0.5f, static_cast<float>(bestB), static_cast<float>(bestC));
                 const auto px = iv::vk::projectToPixel(M, mid, fbW, fbH);
                 if (px[2] > 0.0f) {
-                    addCenteredLabel(ov, sh, lbl, px[0] + bestOut[0] * kAxisLabelMargin,
+                    addCenteredLabel(ov, g, lbl, px[0] + bestOut[0] * kAxisLabelMargin,
                                      px[1] + bestOut[1] * kAxisLabelMargin, fbW, fbH,
-                                     sh.pixelSize() * kAxisLabelScale);
+                                     baseSize * kAxisLabelScale);
                 }
             }
         }
@@ -295,8 +290,8 @@ void buildAnnotations(Overlay& ov, const PlotAxes& axes, const iv::vk::RenderPar
 
     // --- Title: screen top-center, the largest label ---
     if (axes.showTitle && !axes.title.empty()) {
-        const float titleSize = sh.pixelSize() * kTitleScale;
-        addCenteredLabel(ov, sh, axes.title, static_cast<float>(fbW) * 0.5f, titleSize, fbW, fbH,
+        const float titleSize = baseSize * kTitleScale;
+        addCenteredLabel(ov, g, axes.title, static_cast<float>(fbW) * 0.5f, titleSize, fbW, fbH,
                          titleSize);
     }
 }

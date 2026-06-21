@@ -8,9 +8,9 @@
 #include "iv/plot.hpp"
 
 #include "iv/text/annotations.hpp"
-#include "iv/text/bundled_font.hpp"
+#include "iv/text/font_set.hpp"
 #include "iv/text/legend_builder.hpp"
-#include "iv/text/shaper.hpp"
+#include "iv/text/text_layout.hpp" // MixedGlyphs
 #include "iv/vk/viewer.hpp"
 #include "iv/vk/volume.hpp"
 
@@ -26,7 +26,7 @@ namespace {
 // stays copyable for std::function (a move-only captured Shaper would not). The transfer state
 // is read LIVE from each frame's RenderParams, so hotkeys update the legend.
 struct PlotState {
-    iv::text::Shaper shaper;
+    iv::text::FontSet fonts;
     iv::PlotAxes axes;
     iv::MagnitudeRange range;
     std::string fieldName;
@@ -61,17 +61,20 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
     p.legendThickness = options.legendThickness; // ADR-0030 (the live [ / ] channel)
     p.background = options.background;
 
-    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), options.labelPixelSize);
-    if (!shaper) {
-        return std::unexpected(std::move(shaper).error());
+    auto fonts = iv::text::FontSet::create(options.labelPixelSize);
+    if (!fonts) {
+        return std::unexpected(std::move(fonts).error());
     }
 
-    auto state = std::make_shared<PlotState>(PlotState{std::move(*shaper), options.axes, range,
+    auto state = std::make_shared<PlotState>(PlotState{std::move(*fonts), options.axes, range,
                                                        options.fieldName, options.magnitudeLabel,
                                                        options.phaseLabel, options.showLegend});
     viewer->setOnFrame([state](iv::vk::Overlay& ov, const iv::vk::RenderParams& cam,
                                std::uint32_t w, std::uint32_t h) {
-        iv::text::buildAnnotations(ov, state->axes, cam, w, h, state->shaper); // clears + box/axes
+        // One mixed-font builder per frame spans annotations + legend; finish() merges the
+        // roman/italic/math atlases once (ADR-0032). Labels may carry inline `$…$` math (ADR-0033).
+        iv::text::MixedGlyphs glyphs(state->fonts);
+        iv::text::buildAnnotations(ov, glyphs, state->axes, cam, w, h); // clears + box/axes
         if (state->showLegend) {
             iv::LegendSpec ls;
             ls.range = state->range;
@@ -83,8 +86,9 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
             ls.fieldName = state->fieldName;              // ADR-0031
             ls.magnitudeLabel = state->magnitudeLabel;
             ls.phaseLabel = state->phaseLabel;
-            iv::text::buildLegend(ov, ls, w, h, state->shaper); // appends the screen legend
+            iv::text::buildLegend(ov, glyphs, ls, w, h); // appends the screen legend
         }
+        glyphs.finish(ov); // merge the glyph atlases into the overlay
     });
     return viewer;
 }

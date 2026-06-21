@@ -1,8 +1,9 @@
 #include "iv/text/legend_builder.hpp"
 
-#include "iv/plot_axes.hpp"        // ticksFor, formatTick, kDefaultMajor (ADR-0024)
-#include "iv/text/text_layout.hpp" // appendText
-#include "iv/transfer.hpp"         // phaseColor, transferNormalized (ADR-0028)
+#include "iv/plot_axes.hpp"         // ticksFor, formatTick, kDefaultMajor (ADR-0024)
+#include "iv/text/math_layout.hpp"  // appendLabel / measureLabel (math-aware labels, ADR-0033)
+#include "iv/text/text_layout.hpp"  // MixedGlyphs
+#include "iv/transfer.hpp"          // phaseColor, transferNormalized (ADR-0028)
 
 #include <algorithm>
 #include <array>
@@ -47,24 +48,19 @@ void squad(Overlay& ov, float xL, float yA, float xR, float yB, const Color& cLA
     sv(ov.screenTriangles, xL, yB, cLB);
 }
 
-float textWidth(Shaper& sh, std::string_view s) {
-    float w = 0.0f;
-    for (const auto& g : sh.shape(s)) {
-        w += g.xAdvance;
-    }
-    return w;
-}
-// Horizontally centered at pixel (cx), baseline at pixel (by), at the shaper's size.
-void centeredLabel(Overlay& ov, Shaper& sh, std::string_view s, float cx, float by,
+// Math-aware labels (ADR-0033): captions may carry inline `$…$` math (the field name is `$f$`).
+// Horizontally centered at pixel (cx), baseline at pixel (by), at the face set's size.
+void centeredLabel(Overlay& ov, MixedGlyphs& g, std::string_view s, float cx, float by,
                    std::uint32_t fbW, std::uint32_t fbH) {
-    iv::text::appendText(ov, sh, s, cx - 0.5f * textWidth(sh, s), by, fbW, fbH,
-                         {kLabelColor, sh.pixelSize()});
+    const float size = g.fonts().pixelSize();
+    const float w = iv::text::math::measureLabel(g.fonts(), s, size);
+    iv::text::math::appendLabel(g, ov, s, cx - 0.5f * w, by, fbW, fbH, size, kLabelColor);
 }
 // Left-aligned at pixel x, vertically centered on pixel (cy).
-void leftLabel(Overlay& ov, Shaper& sh, std::string_view s, float x, float cy, std::uint32_t fbW,
-               std::uint32_t fbH) {
-    iv::text::appendText(ov, sh, s, x, cy + 0.34f * sh.pixelSize(), fbW, fbH,
-                         {kLabelColor, sh.pixelSize()});
+void leftLabel(Overlay& ov, MixedGlyphs& g, std::string_view s, float x, float cy,
+               std::uint32_t fbW, std::uint32_t fbH) {
+    const float size = g.fonts().pixelSize();
+    iv::text::math::appendLabel(g, ov, s, x, cy + 0.34f * size, fbW, fbH, size, kLabelColor);
 }
 
 // Label for a power-of-ten magnitude tick (log mode): "1" for 10^0, else "1e<exp>".
@@ -74,11 +70,12 @@ std::string decadeLabel(int e) {
 
 } // namespace
 
-void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std::uint32_t fbH,
-                 Shaper& sh) {
+void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::uint32_t fbW,
+                 std::uint32_t fbH) {
     if (!spec.show) {
         return;
     }
+    const float baseSize = g.fonts().pixelSize();
     const float xL = spec.rectNdc[0];
     const float yTop = spec.rectNdc[1];
     const float xR = spec.rectNdc[2];
@@ -130,12 +127,12 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
     for (int k = 0; k < 3; ++k) {
         const float x = xL + (xR - xL) * us[k];
         sline(ov, x, yBot, x, yBot + kTickLenNdc, kBorderColor); // y-down: +len draws downward
-        centeredLabel(ov, sh, plbl[k], pxX(x),
-                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + sh.pixelSize(), fbW, fbH);
+        centeredLabel(ov, g, plbl[k], pxX(x),
+                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + baseSize, fbW, fbH);
     }
     if (const std::string ph = spec.phaseCaption(); !ph.empty()) {
-        centeredLabel(ov, sh, ph, pxX(0.5f * (xL + xR)),
-                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 2.4f * sh.pixelSize(), fbW, fbH);
+        centeredLabel(ov, g, ph, pxX(0.5f * (xL + xR)),
+                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 2.4f * baseSize, fbW, fbH);
     }
 
     // (5) Magnitude ticks + value labels on the right edge, each placed at its normalized ramp
@@ -152,7 +149,7 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
         }
         const float y = yBot + (yTop - yBot) * pos;
         sline(ov, xR, y, xR + kTickLenNdc, y, kBorderColor);
-        leftLabel(ov, sh, label, pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y), fbW, fbH);
+        leftLabel(ov, g, label, pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y), fbW, fbH);
     };
     const double maxM = static_cast<double>(spec.range.max);
     if (spec.opacityMode == 0u) { // linear: nice numbers over [0, max]
@@ -174,8 +171,8 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
         }
     }
     if (const std::string mg = spec.magnitudeCaption(); !mg.empty()) {
-        centeredLabel(ov, sh, mg, pxX(0.5f * (xL + xR)),
-                      pxY(yTop) - kPhaseLabelPadPx - 0.4f * sh.pixelSize(), fbW, fbH);
+        centeredLabel(ov, g, mg, pxX(0.5f * (xL + xR)),
+                      pxY(yTop) - kPhaseLabelPadPx - 0.4f * baseSize, fbW, fbH);
     }
 
     // (6) Reference-thickness label (ADR-0030): the swatch opacity is accumulatedOpacity(a, L),
@@ -185,8 +182,8 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
     {
         char buf[32];
         std::snprintf(buf, sizeof(buf), "L = %.2f", static_cast<double>(spec.referenceThickness));
-        centeredLabel(ov, sh, buf, pxX(0.5f * (xL + xR)),
-                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 3.8f * sh.pixelSize(), fbW, fbH);
+        centeredLabel(ov, g, buf, pxX(0.5f * (xL + xR)),
+                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 3.8f * baseSize, fbW, fbH);
     }
 }
 

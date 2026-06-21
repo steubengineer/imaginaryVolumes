@@ -15,6 +15,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string_view>
 
 namespace iv::text::math {
 
@@ -32,6 +33,19 @@ struct Metrics {
 Metrics layout(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, FontSet& fonts, const List& list,
                float penXpx, float penYpx, std::uint32_t fbWidth, std::uint32_t fbHeight,
                float basePixelSize, const std::array<float, 4>& color);
+
+// Render a full label string (plain text with inline `$…$` math, ADR-0033) into `glyphs` +
+// `overlay`: text spans go to the roman face (MixedGlyphs::appendRun), math spans through
+// layout() above. The baseline origin is (penXpx, penYpx) at `pixelSize` px in `color`; returns
+// the horizontal advance (px). A label with no `$` is the plain roman text path (so it is
+// byte-identical to appendText — the backward-compat invariant). The caller finishes the
+// MixedGlyphs once after all labels are appended.
+float appendLabel(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, std::string_view label,
+                  float penXpx, float penYpx, std::uint32_t fbWidth, std::uint32_t fbHeight,
+                  float pixelSize, const std::array<float, 4>& color);
+
+// The width (px) `label` would occupy at `pixelSize`, without emitting anything (for placement).
+[[nodiscard]] float measureLabel(FontSet& fonts, std::string_view label, float pixelSize);
 
 } // namespace iv::text::math
 

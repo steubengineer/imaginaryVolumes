@@ -172,6 +172,42 @@ TEST_CASE("Layout: radical/overline/accent emit rules + marks (ADR-0033 stage 3)
     CHECK(tallDelim.m.ascent + tallDelim.m.descent > smallDelim.m.ascent + smallDelim.m.descent + 4.0f);
 }
 
+TEST_CASE("appendLabel splits text/math and is backward-compatible (ADR-0033)", "[math]") {
+    auto fonts = FontSet::create(40.0f);
+    REQUIRE(fonts.has_value());
+    const std::array<float, 4> white{1.0f, 1.0f, 1.0f, 1.0f};
+
+    // A label with an inline fraction emits BOTH roman text glyphs and a screen-space rule.
+    iv::vk::Overlay ov;
+    MixedGlyphs g(*fonts);
+    const float adv =
+        iv::text::math::appendLabel(g, ov, "a $\\frac{1}{2}$", 0.0f, 0.0f, 256u, 256u, 40.0f, white);
+    g.finish(ov);
+    CHECK(adv > 0.0f);
+    CHECK_FALSE(ov.glyphs.empty());          // "a " + the fraction digits
+    CHECK_FALSE(ov.screenTriangles.empty()); // the fraction bar (teeth: math span not routed -> none)
+
+    // measureLabel agrees with the emitted advance.
+    CHECK(iv::text::math::measureLabel(*fonts, "a $\\frac{1}{2}$", 40.0f) == Catch::Approx(adv));
+
+    // Backward compat: a label with NO '$' is exactly the roman appendRun path (so plain titles/
+    // axis labels are unchanged — the ADR-0033 opt-in invariant).
+    iv::vk::Overlay plain;
+    MixedGlyphs gp(*fonts);
+    iv::text::math::appendLabel(gp, plain, "Volume", 12.0f, 30.0f, 256u, 256u, 40.0f, white);
+    gp.finish(plain);
+    iv::vk::Overlay ref;
+    MixedGlyphs gr(*fonts);
+    gr.appendRun(iv::text::Face::Roman, "Volume", 12.0f, 30.0f, 256u, 256u, {white, 40.0f});
+    gr.finish(ref);
+    REQUIRE(plain.glyphs.size() == ref.glyphs.size());
+    CHECK(plain.screenTriangles.empty()); // no rules for plain text
+    for (std::size_t i = 0; i < plain.glyphs.size(); ++i) {
+        CHECK(plain.glyphs[i].pos == ref.glyphs[i].pos);
+        CHECK(plain.glyphs[i].glyphLoc == ref.glyphs[i].glyphLoc);
+    }
+}
+
 // End-to-end: \frac{1}{2} renders a real horizontal rule with ink above (1) and below (2),
 // validation-clean. teeth: drop the rule and the wide bright bar row vanishes.
 TEST_CASE("Layout: a fraction renders a rule with numerator above / denominator below",

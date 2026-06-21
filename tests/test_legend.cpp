@@ -8,9 +8,9 @@
 #include "iv/legend.hpp"
 #include "iv/plot_axes.hpp"
 #include "iv/text/annotations.hpp"
-#include "iv/text/bundled_font.hpp"
+#include "iv/text/font_set.hpp"
 #include "iv/text/legend_builder.hpp"
-#include "iv/text/shaper.hpp"
+#include "iv/text/text_layout.hpp"
 #include "iv/vk/context.hpp"
 #include "iv/vk/renderer.hpp"
 #include "iv/vk/volume.hpp"
@@ -22,16 +22,37 @@
 #include <vector>
 
 using iv::GridDims;
+using iv::text::FontSet;
+using iv::text::MixedGlyphs;
 using iv::vk::Context;
 using iv::vk::Renderer;
 using iv::vk::RenderParams;
 using iv::vk::Volume;
 
+namespace {
+// buildLegend through the M9 mixed-font path + finish (ADR-0032/0033); fonts last to match the
+// old single-Shaper call shape.
+void legendG(iv::vk::Overlay& ov, const iv::LegendSpec& spec, std::uint32_t W, std::uint32_t H,
+             FontSet& fonts) {
+    MixedGlyphs g(fonts);
+    iv::text::buildLegend(ov, g, spec, W, H);
+    g.finish(ov);
+}
+// One viewer-style frame: annotations + legend share ONE builder + ONE finish into the overlay.
+void frameG(iv::vk::Overlay& ov, const iv::PlotAxes& axes, const RenderParams& cam,
+            const iv::LegendSpec& spec, std::uint32_t W, std::uint32_t H, FontSet& fonts) {
+    MixedGlyphs g(fonts);
+    iv::text::buildAnnotations(ov, g, axes, cam, W, H);
+    iv::text::buildLegend(ov, g, spec, W, H);
+    g.finish(ov);
+}
+} // namespace
+
 TEST_CASE("Legend: field name derives the captions; explicit labels override (ADR-0031)",
           "[legend]") {
-    iv::LegendSpec s; // default fieldName "f", empty overrides
-    CHECK(s.magnitudeCaption() == "|f|");
-    CHECK(s.phaseCaption() == "arg(f)");
+    iv::LegendSpec s; // default fieldName "$f$" (math italic), empty overrides
+    CHECK(s.magnitudeCaption() == "|$f$|");
+    CHECK(s.phaseCaption() == "arg($f$)");
 
     s.fieldName = "Phi";
     CHECK(s.magnitudeCaption() == "|Phi|");
@@ -50,8 +71,8 @@ TEST_CASE("Legend: field name derives the captions; explicit labels override (AD
 }
 
 TEST_CASE("Legend: buildLegend populates screen channels + labels and honors show", "[legend]") {
-    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
-    REQUIRE(shaper.has_value());
+    auto fonts = FontSet::create(16.0f);
+    REQUIRE(fonts.has_value());
 
     iv::LegendSpec spec;
     spec.range = {0.01f, 1.0f};
@@ -60,7 +81,7 @@ TEST_CASE("Legend: buildLegend populates screen channels + labels and honors sho
     spec.densityScale = 1.0f;
 
     iv::vk::Overlay ov;
-    iv::text::buildLegend(ov, spec, 256u, 256u, *shaper);
+    legendG(ov, spec, 256u, 256u, *fonts);
 
     // Screen-space swatch/border + glyph labels populated; world-space channels untouched.
     CHECK_FALSE(ov.screenTriangles.empty());
@@ -89,14 +110,14 @@ TEST_CASE("Legend: buildLegend populates screen channels + labels and honors sho
     // show = false draws nothing.
     iv::vk::Overlay off;
     spec.show = false;
-    iv::text::buildLegend(off, spec, 256u, 256u, *shaper);
+    legendG(off, spec, 256u, 256u, *fonts);
     CHECK(off.empty());
 
     // The ADR-0030 thickness label uses plain "L" because the bundled NCM-Book face lacks
     // U+2113 (the script small l) — it maps to .notdef (0). Pin both so the label symbol stays a
     // present glyph (don't "upgrade" the label back to U+2113 without a font that has it).
-    const auto ell = shaper->shape("\xE2\x84\x93");
-    const auto cap = shaper->shape("L");
+    const auto ell = fonts->shaper(iv::text::Face::Roman).shape("\xE2\x84\x93");
+    const auto cap = fonts->shaper(iv::text::Face::Roman).shape("L");
     REQUIRE(ell.size() == 1);
     REQUIRE(cap.size() == 1);
     CHECK(ell[0].glyphId == 0u); // U+2113 absent in NCM-Book
@@ -107,8 +128,8 @@ TEST_CASE("Legend: rebuilding into a reused overlay does not accumulate", "[lege
     // The viewer reuses ONE overlay every frame (buildAnnotations then buildLegend). The
     // screen-space legend channels must be cleared each frame, or the swatch stacks copies →
     // compounding opacity. buildAnnotations() resets all channels; buildLegend() appends.
-    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
-    REQUIRE(shaper.has_value());
+    auto fonts = FontSet::create(16.0f);
+    REQUIRE(fonts.has_value());
 
     iv::PlotAxes axes;
     iv::LegendSpec spec;
@@ -116,24 +137,22 @@ TEST_CASE("Legend: rebuilding into a reused overlay does not accumulate", "[lege
     iv::vk::Overlay ov;
     iv::vk::RenderParams cam;
 
-    iv::text::buildAnnotations(ov, axes, cam, 256u, 256u, *shaper);
-    iv::text::buildLegend(ov, spec, 256u, 256u, *shaper);
+    frameG(ov, axes, cam, spec, 256u, 256u, *fonts);
     const std::size_t triangles1 = ov.screenTriangles.size();
     const std::size_t lines1 = ov.screenLines.size();
     const std::size_t glyphs1 = ov.glyphs.size();
     REQUIRE(triangles1 > 0);
 
     // A second frame into the same overlay must produce the SAME counts, not doubled.
-    iv::text::buildAnnotations(ov, axes, cam, 256u, 256u, *shaper);
-    iv::text::buildLegend(ov, spec, 256u, 256u, *shaper);
+    frameG(ov, axes, cam, spec, 256u, 256u, *fonts);
     CHECK(ov.screenTriangles.size() == triangles1);
     CHECK(ov.screenLines.size() == lines1);
     CHECK(ov.glyphs.size() == glyphs1);
 }
 
 TEST_CASE("Legend: log mode uses decade ticks that track the window (B-0011)", "[legend]") {
-    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
-    REQUIRE(shaper.has_value());
+    auto fonts = FontSet::create(16.0f);
+    REQUIRE(fonts.has_value());
 
     iv::LegendSpec base;
     base.range = {1e-6f, 1.0f};
@@ -146,8 +165,8 @@ TEST_CASE("Legend: log mode uses decade ticks that track the window (B-0011)", "
 
     iv::vk::Overlay on;
     iv::vk::Overlay ow;
-    iv::text::buildLegend(on, narrow, 256u, 256u, *shaper);
-    iv::text::buildLegend(ow, wide, 256u, 256u, *shaper);
+    legendG(on, narrow, 256u, 256u, *fonts);
+    legendG(ow, wide, 256u, 256u, *fonts);
 
     // A wider decade window shows more decade ticks -> more right-edge tick lines + labels. If
     // the decade window were ignored (e.g. linear ticks over ~[0,max]), the two would match.
@@ -156,8 +175,8 @@ TEST_CASE("Legend: log mode uses decade ticks that track the window (B-0011)", "
 }
 
 TEST_CASE("Legend: thickness correction boosts swatch opacity (ADR-0030)", "[legend]") {
-    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
-    REQUIRE(shaper.has_value());
+    auto fonts = FontSet::create(16.0f);
+    REQUIRE(fonts.has_value());
 
     iv::LegendSpec base;
     base.range = {0.01f, 1.0f};
@@ -170,8 +189,8 @@ TEST_CASE("Legend: thickness correction boosts swatch opacity (ADR-0030)", "[leg
 
     iv::vk::Overlay oo;
     iv::vk::Overlay ot;
-    iv::text::buildLegend(oo, off, 256u, 256u, *shaper);
-    iv::text::buildLegend(ot, thick, 256u, 256u, *shaper);
+    legendG(oo, off, 256u, 256u, *fonts);
+    legendG(ot, thick, 256u, 256u, *fonts);
 
     const auto maxAlpha = [](const iv::vk::Overlay& ov) {
         float m = 0.0f;
@@ -189,8 +208,8 @@ TEST_CASE("Legend: swatch renders phase color across and opacity up (ADR-0028)",
     REQUIRE(ctx.has_value());
     auto rend = Renderer::create(*ctx);
     REQUIRE(rend.has_value());
-    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
-    REQUIRE(shaper.has_value());
+    auto fonts = FontSet::create(16.0f);
+    REQUIRE(fonts.has_value());
 
     const GridDims d{8, 8, 8};
     auto vol = Volume::create(*ctx, std::vector<std::complex<float>>(d.count(), {0.0f, 0.0f}), d);
@@ -207,7 +226,7 @@ TEST_CASE("Legend: swatch renders phase color across and opacity up (ADR-0028)",
     spec.rectNdc = {0.2f, -0.7f, 0.7f, 0.7f}; // a large, easy-to-sample swatch
 
     iv::vk::Overlay ov;
-    iv::text::buildLegend(ov, spec, W, H, *shaper);
+    legendG(ov, spec, W, H, *fonts);
     REQUIRE_FALSE(ov.screenTriangles.empty());
 
     RenderParams p;

@@ -6,9 +6,9 @@
 #include "iv/plot.hpp"
 
 #include "iv/text/annotations.hpp"
-#include "iv/text/bundled_font.hpp"
+#include "iv/text/font_set.hpp"
 #include "iv/text/legend_builder.hpp"
-#include "iv/text/shaper.hpp"
+#include "iv/text/text_layout.hpp" // MixedGlyphs
 #include "iv/vk/context.hpp"
 #include "iv/vk/renderer.hpp"
 #include "iv/vk/volume.hpp"
@@ -60,20 +60,24 @@ Result<iv::vk::ImageReadback> renderPlotImpl(std::span<const std::complex<T>> fi
     if (!vol) {
         return std::unexpected(std::move(vol).error());
     }
-    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), options.labelPixelSize);
-    if (!shaper) {
-        return std::unexpected(std::move(shaper).error());
+    auto fonts = iv::text::FontSet::create(options.labelPixelSize);
+    if (!fonts) {
+        return std::unexpected(std::move(fonts).error());
     }
 
     iv::vk::RenderParams p;
     applyTransfer(p, options);
 
+    // One mixed-font glyph builder spans the annotations + legend labels; finish() merges the
+    // roman/italic/math atlases once (ADR-0032/0033). Labels may carry inline `$…$` math.
     iv::vk::Overlay ov;
-    iv::text::buildAnnotations(ov, options.axes, p, width, height, *shaper);
+    iv::text::MixedGlyphs glyphs(*fonts);
+    iv::text::buildAnnotations(ov, glyphs, options.axes, p, width, height);
     if (options.showLegend) {
         const iv::LegendSpec ls = legendFor(options, vol->magnitudeRange());
-        iv::text::buildLegend(ov, ls, width, height, *shaper);
+        iv::text::buildLegend(ov, glyphs, ls, width, height);
     }
+    glyphs.finish(ov);
     return rend->render(*vol, width, height, p, &ov);
 }
 

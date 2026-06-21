@@ -1045,9 +1045,12 @@ the same day. Future entries prepend above.)
   plotting library; math typesetting is the next major capability, likely its own milestone (M9).
 - **Revisit when:** after the appearance polish; scope as a milestone with its own ADRs.
 - **Contract link:** extends the text layer (ADR-0022/0023) substantially; new math-layout ADRs.
-- **Status:** **Being addressed in M9** — ADR-0032 (mixed-font substrate, resolves the B-0012
-  prerequisite) + ADR-0033 (inline `$…$` math model, subset & OpenType-MATH layout), both
-  Proposed 2026-06-21.
+- **Resolved:** M9 (2026-06-21) — **ADR-0032** (mixed-font substrate, resolved the B-0012
+  prerequisite) + **ADR-0033** (inline `$…$` math model, LaTeX subset & OpenType-MATH layout), both
+  Accepted. Caller labels (title/axis/unit/legend captions) now render publication-quality math
+  (scripts, `\frac`, `\sqrt`, accents, stretchy delimiters, bra–ket, Greek/symbol macros) via an
+  owned parser + box layout over the bundled NewCMMath face (no TeX engine; D-0048). Follow-on:
+  legend scientific-notation tick labels (B-0016).
 
 ### B-0016 — Scientific/superscript notation for the legend magnitude axis (`1×10⁻³`)
 - **Origin:** maintainer review, 2026-06-21 (M9 CONTRACT, redline on ADR-0033 point 4).

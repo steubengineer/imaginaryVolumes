@@ -73,6 +73,9 @@ public:
     // True if no glyph has been appended since construction/finish().
     [[nodiscard]] bool empty() const noexcept;
 
+    // The face set this builder draws from (used by the label/math layer to measure + lay out).
+    [[nodiscard]] FontSet& fonts() const noexcept { return *fonts_; }
+
 private:
     FontSet* fonts_;
     // Per-face accumulated quads; glyphLoc holds the FACE-LOCAL atlas offset until finish()

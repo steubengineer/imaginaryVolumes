@@ -4,11 +4,40 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
-## M9 — Mathematical Typesetting in Labels (in progress)
+## M9 — Mathematical Typesetting in Labels
 
 Inline LaTeX-subset math in labels (`"Wave $f(x)=\frac{1}{2}$"`), via an owned subset parser +
 OpenType-MATH box layout over `hb_ot_math_*` (no TeX engine; D-0048). Two ADRs: ADR-0032 (the
-mixed-font substrate) then ADR-0033 (the `$…$` model + subset + layout).
+mixed-font substrate) then ADR-0033 (the `$…$` model + subset + layout). Built in four verified
+stages, each committed green; the payoff is publication-quality math in titles, axis labels, and
+legend captions — both headless (`renderPlot`) and in the viewer (`makePlot`).
+
+- **Inline-math labels** (ADR-0033; resolves **B-0015**): caller label strings (`PlotAxes`
+  title/axis/unit; `LegendSpec` `fieldName`/overrides) are parsed as alternating text + `$…$`
+  math. **Parser** (`iv::text::math::parse` / `splitLabel`): a recursive-descent grammar over the
+  subset — atoms (italic vars / upright digits & operators with math classes), `^`/`_` scripts,
+  `\frac`, `\sqrt[n]`, `\hat`/`\dot`/`\overline`, `\left…\right` + bra–ket
+  (`\bra`/`\ket`/`\braket`/`\ketbra`), `{}`, a curated Greek/symbol/operator macro table,
+  `\mathrm`/`\mathbf`/`\mathit`, spacing; `\$` literal; unknown command / unmatched `$` →
+  literal fallback + diagnostic (no throw). **Layout** (`math::layout`): a box model taking every
+  vertical metric from the MATH table (axis, fraction shifts/gaps, script shifts, radical/overbar
+  gaps, accent attachment, size variants for stretchy delimiters/surds) via a new Shaper math API
+  (`glyphForCodepoint`, `glyphAdvance`, `mathConstant`, `scriptScaleDown`, `mathItalicCorrection`,
+  `glyphVariant`, `mathTopAccentAttachment`) — **no hardcoded TeX constants**. Glyphs emit through
+  the ADR-0032 mixed-font channel; fraction/radical/overbar rules as screen-space rects.
+  `appendLabel`/`measureLabel` bridge labels into the builders; `buildAnnotations`/`buildLegend`
+  now take a `FontSet` + shared `MixedGlyphs` (caller finishes once). The **legend field name
+  default is now `"$f$"`** (true math italic → captions `|𝑓|` / `arg(𝑓)`; amends ADR-0031). A
+  `$`-free label is byte-identical to the old roman path (the opt-in invariant).
+  **Teeth:** parser structure (`\frac` arg order — demonstrated red by swapping num/den);
+  layout-from-font (fraction rule at the font axis — demonstrated red by zeroing axisHeight; glyph
+  variants stretch — demonstrated red by ignoring variants); `\sqrt`/`\overline` emit rules,
+  `\hat` adds a mark, stretchy `\left(\frac{a}{b}\right)` grows; `appendLabel` splits text/math
+  (a fraction emits a rule) and a no-`$` label matches `appendRun`; end-to-end `\frac` renders a
+  wide bar with ink above/below, validation-clean. Eyeballed a full Bell-state plot
+  (`|\psi\rangle = \frac{1}{\sqrt2}(|0\rangle+|1\rangle)` title, math-italic `|\psi|`/`arg(\psi)`
+  legend). Gates: full suite **1313/100**; ASan+UBSan **2/2**; text-free + GLFW-free builds OK; no
+  HarfBuzz type in any public header; viewer present-path validation-CLEAN.
 
 - **Mixed-font glyph substrate** (ADR-0032; resolves **B-0012**): multiple font faces — roman
   (`NewCM10-Book`), true italic (`NewCM10-BookItalic`), and the OpenType MATH face

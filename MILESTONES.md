@@ -316,7 +316,7 @@ renderer headlessly via deterministic pixel readback before the window exists.
   draws through the same host evaluators the GPU cross-check pins to the shader).
 
 ## M9 — Mathematical Typesetting in Labels (Inline LaTeX-Subset Math)
-- **Status:** Planned.
+- **Status:** Complete (2026-06-21) — locked (§2.5).
 - **Goal:** Turn every plot label (title, axis labels/units, tick values, legend captions)
   into a string that may carry **inline LaTeX math** in `$…$` islands — e.g.
   `"Wave $f(x)=\frac{1}{2}$"` renders `Wave ` as text and the `$…$` span as **publication-quality
@@ -354,6 +354,13 @@ renderer headlessly via deterministic pixel readback before the window exists.
   plain label, the glyph stream differs → red); mixed-font draw (teeth: bind the wrong atlas → the
   italic/math run renders as wrong/`.notdef` glyphs → red); an end-to-end headless render of a
   math-labeled plot, validation-clean. Refined at M9 CONTRACT.
-- **Actual ADRs:** (filled at completion.)
-- **Note:** if the subset/layout work trends past ~3 ADRs it splits into sequential sub-milestones
-  (§2.2); the intended shape is 2 ADRs (substrate, then the math model/layout).
+- **Actual ADRs:** ADR-0032 (mixed-font / multi-atlas glyph substrate + bundled NewCM italic &
+  math faces; resolves B-0012) · ADR-0033 (inline `$…$` math model, LaTeX subset & OpenType-MATH
+  layout). Decisions D-0048 (owned-engine approach). Backlog: B-0012 resolved, B-0015 resolved,
+  B-0016 filed (legend sci-notation follow-on). Commits: 63a2a2a (contract + ADR-0032), 7ce38be
+  (parser), 30287c4 (layout: hlist/fraction/scripts), cfc4c27 (radicals/accents/stretchy
+  delimiters), and the label-integration commit (M9 complete). Demonstrated teeth (CHANGELOG § M9).
+- **Note:** completed as scoped (2 ADRs, ≤ ~5 per §2.2; no split). Built in four verified stages
+  (parser → core layout → constructs → label integration), each committed green. The math is owned
+  end to end (no TeX engine): an owned subset parser + an OpenType-MATH box layout taking every
+  positioning constant from the bundled NewCMMath face via HarfBuzz's `hb_ot_math_*`.

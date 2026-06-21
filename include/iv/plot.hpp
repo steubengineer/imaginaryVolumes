@@ -34,7 +34,8 @@ namespace iv {
 struct PlotOptions {
     PlotAxes axes{};                     // box / ticks / labels / title (ADR-0024)
     bool showLegend{true};               // the phase x magnitude legend (ADR-0028)
-    std::string fieldName{"f"};          // names the field -> legend captions |f| / arg(f) (ADR-0031)
+    std::string fieldName{"$f$"};        // names the field -> captions |f| / arg(f); a label string
+                                         // that may carry inline $...$ math (ADR-0031/0033)
     std::string magnitudeLabel{};        // override the magnitude caption (empty => derive from fieldName)
     std::string phaseLabel{};            // override the phase caption (empty => derive from fieldName)
 

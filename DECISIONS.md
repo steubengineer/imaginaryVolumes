@@ -863,15 +863,20 @@ the same day. Future entries prepend above.)
 - **Origin:** D-0007 (road not taken).
 - **What:** Offer further cyclic colormaps (and/or caller-supplied maps).
 - **Why deferred:** Two maps cover the immediate need; more is scope creep now.
-- **Revisit when:** Users request specific additional maps.
-- **Contract link:** would extend the M4 colormap ADR.
+- **Revisit when:** Users request specific additional maps — **now requested**: on the
+  graphics-polish agenda (2026-06-21); still open.
+- **Contract link:** would extend the M4 colormap ADR (ADR-0014).
 
 ### B-0006 — Vulkan Memory Allocator (VMA) for device memory
 - **Origin:** D-0013 / ADR-0006 (road not taken).
 - **What:** Adopt AMD's VMA (single-header) instead of raw `vkAllocateMemory`.
 - **Why deferred:** M2 needs only one image + one staging buffer; raw allocation
-  is adequate and avoids a new dependency before it pays off.
-- **Revisit when:** M3 — allocations proliferate (3D textures, staging, buffers).
+  is adequate and avoids a new dependency before it pays off. Still deferred through M8 —
+  raw allocation via the shared `findMemoryType`/allocate helper has remained adequate
+  (D-0017); the viewer adds only swapchain images (driver-managed) + a few small per-frame
+  buffers.
+- **Revisit when:** device-memory management outgrows the current handful of images/buffers
+  (e.g. many volumes resident, streaming, or defragmentation needs).
 - **Contract link:** a new dependency ADR (§1.1) + would amend ADR-0006's memory
   section.
 
@@ -921,8 +926,12 @@ the same day. Future entries prepend above.)
   rendering-model refinement, not a viewer concern.
 - **Revisit when:** the "usable scientific data plotting library" milestone
   (quantitative correctness of opacity / transfer function).
-- **Status:** **Scheduled into M6** — ADR-0020 (Proposed) / D-0031.
 - **Contract link:** would extend ADR-0013 (opacity transfer function).
+- **Resolved:** M6 / ADR-0020 (Accepted, 53d7c84) / D-0031 — `ray_march.comp` applies the
+  dt-correction `α = 1 − (1 − a)^(dt · kReferenceSteps)` (`kReferenceSteps = 256`), so the
+  displayed density is invariant to `stepCount`; the ADR-0019 perf teeth then bite via
+  `--no-early-term` (D-0030). It is also the basis for the M8 legend thickness model
+  (ADR-0030 `iv::accumulatedOpacity`).
 
 ### B-0007 — Volume bounding box with axis ticks/labels
 - **Origin:** ADR-0012 review (maintainer, 2026-06-19).

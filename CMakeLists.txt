@@ -159,8 +159,8 @@ if(IV_BUILD_TEXT)
 
     add_library(iv_text STATIC
         src/text/shaper.cpp src/text/bundled_font.cpp src/text/font_set.cpp
-        src/text/text_layout.cpp src/text/math_parse.cpp src/text/annotations.cpp
-        src/text/legend_builder.cpp src/plot_render.cpp
+        src/text/text_layout.cpp src/text/math_parse.cpp src/text/math_layout.cpp
+        src/text/annotations.cpp src/text/legend_builder.cpp src/plot_render.cpp
         ${IV_FONT_GEN_ROMAN} ${IV_FONT_GEN_ITALIC} ${IV_FONT_GEN_MATH})
     add_library(iv::text ALIAS iv_text)
     # iv is PUBLIC: shaper.hpp includes iv/error.hpp. harfbuzz_core is PRIVATE:

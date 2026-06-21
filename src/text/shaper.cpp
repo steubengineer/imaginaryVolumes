@@ -4,6 +4,7 @@
 // from the vendored harfbuzz_core/_gpu, so their headers don't trip our -Werror.
 #include <hb.h>
 #include <hb-gpu.h>
+#include <hb-ot.h> // hb_ot_math_* (ADR-0033; OpenType MATH table)
 
 #include <cmath>
 #include <cstdint>
@@ -194,6 +195,97 @@ const EncodedGlyph& Shaper::encodeGlyph(std::uint32_t glyphId) {
 
 std::span<const std::int16_t> Shaper::glyphAtlas() const noexcept {
     return std::span<const std::int16_t>(impl_->atlas.data(), impl_->atlas.size());
+}
+
+std::uint32_t Shaper::glyphForCodepoint(char32_t cp) const noexcept {
+    hb_codepoint_t g = 0;
+    // Nominal cmap mapping (no shaping); encodeFont is at the face default scale.
+    hb_font_get_nominal_glyph(impl_->encodeFont, static_cast<hb_codepoint_t>(cp), &g);
+    return g;
+}
+
+float Shaper::glyphAdvance(std::uint32_t glyphId) const noexcept {
+    // encodeFont is at the upem (font-unit) scale, so the advance is already in font units.
+    return static_cast<float>(
+        hb_font_get_glyph_h_advance(impl_->encodeFont, static_cast<hb_codepoint_t>(glyphId)));
+}
+
+bool Shaper::hasMathTable() const noexcept {
+    return hb_ot_math_has_data(impl_->face) != 0;
+}
+
+namespace {
+hb_ot_math_constant_t toHbConstant(Shaper::MathConstant c) {
+    using MC = Shaper::MathConstant;
+    switch (c) {
+    case MC::axisHeight:
+        return HB_OT_MATH_CONSTANT_AXIS_HEIGHT;
+    case MC::fractionRuleThickness:
+        return HB_OT_MATH_CONSTANT_FRACTION_RULE_THICKNESS;
+    case MC::fractionNumeratorShiftUp:
+        return HB_OT_MATH_CONSTANT_FRACTION_NUMERATOR_SHIFT_UP;
+    case MC::fractionDenominatorShiftDown:
+        return HB_OT_MATH_CONSTANT_FRACTION_DENOMINATOR_SHIFT_DOWN;
+    case MC::fractionNumeratorGapMin:
+        return HB_OT_MATH_CONSTANT_FRACTION_NUMERATOR_GAP_MIN;
+    case MC::fractionDenominatorGapMin:
+        return HB_OT_MATH_CONSTANT_FRACTION_DENOMINATOR_GAP_MIN;
+    case MC::superscriptShiftUp:
+        return HB_OT_MATH_CONSTANT_SUPERSCRIPT_SHIFT_UP;
+    case MC::subscriptShiftDown:
+        return HB_OT_MATH_CONSTANT_SUBSCRIPT_SHIFT_DOWN;
+    case MC::superscriptBottomMin:
+        return HB_OT_MATH_CONSTANT_SUPERSCRIPT_BOTTOM_MIN;
+    case MC::subscriptTopMax:
+        return HB_OT_MATH_CONSTANT_SUBSCRIPT_TOP_MAX;
+    case MC::subSuperscriptGapMin:
+        return HB_OT_MATH_CONSTANT_SUB_SUPERSCRIPT_GAP_MIN;
+    case MC::superscriptBaselineDropMax:
+        return HB_OT_MATH_CONSTANT_SUPERSCRIPT_BASELINE_DROP_MAX;
+    case MC::subscriptBaselineDropMin:
+        return HB_OT_MATH_CONSTANT_SUBSCRIPT_BASELINE_DROP_MIN;
+    case MC::radicalRuleThickness:
+        return HB_OT_MATH_CONSTANT_RADICAL_RULE_THICKNESS;
+    case MC::radicalVerticalGap:
+        return HB_OT_MATH_CONSTANT_RADICAL_VERTICAL_GAP;
+    case MC::radicalExtraAscender:
+        return HB_OT_MATH_CONSTANT_RADICAL_EXTRA_ASCENDER;
+    case MC::radicalKernBeforeDegree:
+        return HB_OT_MATH_CONSTANT_RADICAL_KERN_BEFORE_DEGREE;
+    case MC::radicalKernAfterDegree:
+        return HB_OT_MATH_CONSTANT_RADICAL_KERN_AFTER_DEGREE;
+    case MC::radicalDegreeBottomRaisePercent:
+        return HB_OT_MATH_CONSTANT_RADICAL_DEGREE_BOTTOM_RAISE_PERCENT;
+    case MC::accentBaseHeight:
+        return HB_OT_MATH_CONSTANT_ACCENT_BASE_HEIGHT;
+    case MC::overbarVerticalGap:
+        return HB_OT_MATH_CONSTANT_OVERBAR_VERTICAL_GAP;
+    case MC::overbarRuleThickness:
+        return HB_OT_MATH_CONSTANT_OVERBAR_RULE_THICKNESS;
+    case MC::overbarExtraAscender:
+        return HB_OT_MATH_CONSTANT_OVERBAR_EXTRA_ASCENDER;
+    }
+    return HB_OT_MATH_CONSTANT_AXIS_HEIGHT;
+}
+} // namespace
+
+float Shaper::mathConstant(MathConstant c) const noexcept {
+    return static_cast<float>(hb_ot_math_get_constant(impl_->encodeFont, toHbConstant(c)));
+}
+
+float Shaper::scriptScaleDown(bool scriptScript) const noexcept {
+    const auto which = scriptScript ? HB_OT_MATH_CONSTANT_SCRIPT_SCRIPT_PERCENT_SCALE_DOWN
+                                    : HB_OT_MATH_CONSTANT_SCRIPT_PERCENT_SCALE_DOWN;
+    const int pct = hb_ot_math_get_constant(impl_->encodeFont, which);
+    if (pct > 0) {
+        return static_cast<float>(pct) / 100.0f;
+    }
+    return scriptScript ? 0.5f : 0.7f; // CM defaults when the table is absent
+}
+
+float Shaper::mathItalicCorrection(std::uint32_t glyphId) const noexcept {
+    return static_cast<float>(hb_ot_math_get_glyph_italics_correction(
+        impl_->encodeFont, static_cast<hb_codepoint_t>(glyphId)));
 }
 
 } // namespace iv::text

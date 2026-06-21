@@ -104,6 +104,55 @@ public:
     // are encoded; the span is invalidated by the next encodeGlyph().
     [[nodiscard]] std::span<const std::int16_t> glyphAtlas() const noexcept;
 
+    // --- Math metrics (ADR-0033): font-unit queries the OpenType-MATH layout draws through.
+    // All lengths are in FONT (design) units — scale by pixelSizePx / unitsPerEm(). HarfBuzz
+    // stays fully behind this boundary (ADR-0004): the enums below are ours, mapped internally.
+
+    // The glyph index for a Unicode codepoint via the cmap (no shaping features); 0 = .notdef.
+    [[nodiscard]] std::uint32_t glyphForCodepoint(char32_t cp) const noexcept;
+    // Horizontal advance of a glyph, in font units.
+    [[nodiscard]] float glyphAdvance(std::uint32_t glyphId) const noexcept;
+
+    // True if the face carries an OpenType MATH table (the math face does; text faces don't).
+    [[nodiscard]] bool hasMathTable() const noexcept;
+
+    // The subset of OpenType MATH constants the layout needs (mirrors hb_ot_math_constant_t).
+    // Values are font units, EXCEPT the two *PercentScaleDown entries (a 0–100 percentage —
+    // use scriptScaleDown()). Returns 0 if the face lacks a MATH table.
+    enum class MathConstant {
+        axisHeight,
+        fractionRuleThickness,
+        fractionNumeratorShiftUp,
+        fractionDenominatorShiftDown,
+        fractionNumeratorGapMin,
+        fractionDenominatorGapMin,
+        superscriptShiftUp,
+        subscriptShiftDown,
+        superscriptBottomMin,
+        subscriptTopMax,
+        subSuperscriptGapMin,
+        superscriptBaselineDropMax,
+        subscriptBaselineDropMin,
+        radicalRuleThickness,
+        radicalVerticalGap,
+        radicalExtraAscender,
+        radicalKernBeforeDegree,
+        radicalKernAfterDegree,
+        radicalDegreeBottomRaisePercent, // a 0–100 percentage
+        accentBaseHeight,
+        overbarVerticalGap,
+        overbarRuleThickness,
+        overbarExtraAscender,
+    };
+    [[nodiscard]] float mathConstant(MathConstant c) const noexcept;
+
+    // The script / scriptscript size factor (0–1); the MATH *PercentScaleDown constants over
+    // 100, with sane CM defaults (0.7 / 0.5) if the face lacks the table.
+    [[nodiscard]] float scriptScaleDown(bool scriptScript) const noexcept;
+
+    // The MATH italic correction of a glyph, in font units (0 if none / no table).
+    [[nodiscard]] float mathItalicCorrection(std::uint32_t glyphId) const noexcept;
+
 private:
     Shaper() = default;
     struct Impl;

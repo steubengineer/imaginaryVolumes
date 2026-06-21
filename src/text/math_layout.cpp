@@ -1,0 +1,449 @@
+#include "iv/text/math_layout.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <variant>
+#include <vector>
+
+// OpenType-MATH box layout (ADR-0033 §3). Builds a tree of boxes whose leaves are positioned
+// glyphs + rules, taking every vertical metric from the math face's MATH table via the Shaper
+// (no hardcoded TeX constants). Box-local coordinates are baseline-relative with +y UP; the
+// public layout() flips to the top-left-origin framebuffer at emit. Stage-2 scope: symbols +
+// horizontal lists (with inter-atom spacing), fractions, and super/subscripts, plus functional
+// (non-stretch) delimiters; radicals/accents are refined in stage 3.
+
+namespace iv::text::math {
+
+namespace {
+
+using MC = Shaper::MathConstant;
+
+enum class Style : std::uint8_t { Display, Text, Script, ScriptScript };
+
+// One glyph placed at a baseline origin (x, y) in box-local px (+y up), drawn at sizePx.
+struct GlyphInst {
+    Face face;
+    std::uint32_t glyphId;
+    float x;
+    float y;
+    float sizePx;
+};
+// A filled rule (fraction bar / vinculum): box-local rect [x0,x1] x [y0,y1] px, +y up (y1>y0).
+struct RuleInst {
+    float x0;
+    float y0;
+    float x1;
+    float y1;
+};
+
+struct Box {
+    float width{0.0f};
+    float ascent{0.0f};
+    float descent{0.0f};
+    float italicCorr{0.0f};       // of the last atom (for scripts)
+    AtomClass cls{AtomClass::Ord}; // for inter-atom spacing
+    std::vector<GlyphInst> glyphs;
+    std::vector<RuleInst> rules;
+};
+
+void translate(Box& b, float dx, float dy) {
+    for (auto& g : b.glyphs) {
+        g.x += dx;
+        g.y += dy;
+    }
+    for (auto& r : b.rules) {
+        r.x0 += dx;
+        r.x1 += dx;
+        r.y0 += dy;
+        r.y1 += dy;
+    }
+}
+
+void appendBox(Box& into, const Box& b) {
+    into.glyphs.insert(into.glyphs.end(), b.glyphs.begin(), b.glyphs.end());
+    into.rules.insert(into.rules.end(), b.rules.begin(), b.rules.end());
+}
+
+bool isAsciiLetter(char32_t cp) {
+    return (cp >= U'A' && cp <= U'Z') || (cp >= U'a' && cp <= U'z');
+}
+
+// Map an ASCII letter/digit to the Mathematical Bold alphanumeric block (\mathbf).
+char32_t toBoldMath(char32_t cp) {
+    if (cp >= U'A' && cp <= U'Z') {
+        return 0x1D400 + (cp - U'A');
+    }
+    if (cp >= U'a' && cp <= U'z') {
+        return 0x1D41A + (cp - U'a');
+    }
+    if (cp >= U'0' && cp <= U'9') {
+        return 0x1D7CE + (cp - U'0');
+    }
+    return cp;
+}
+
+float sizeFor(Style st, float base, FontSet& fonts) {
+    switch (st) {
+    case Style::Display:
+    case Style::Text:
+        return base;
+    case Style::Script:
+        return base * fonts.shaper(Face::Math).scriptScaleDown(false);
+    case Style::ScriptScript:
+        return base * fonts.shaper(Face::Math).scriptScaleDown(true);
+    }
+    return base;
+}
+
+Style smaller(Style st) {
+    switch (st) {
+    case Style::Display:
+    case Style::Text:
+        return Style::Script;
+    case Style::Script:
+    case Style::ScriptScript:
+        return Style::ScriptScript;
+    }
+    return Style::Script;
+}
+
+Style fracChildStyle(Style st) {
+    switch (st) {
+    case Style::Display:
+        return Style::Text;
+    case Style::Text:
+        return Style::Script;
+    case Style::Script:
+    case Style::ScriptScript:
+        return Style::ScriptScript;
+    }
+    return Style::Script;
+}
+
+// Inter-atom spacing (TeXbook, simplified) in math units (1mu = 1/18 em); suppressed in script
+// styles. Returns 0 unless a Bin/Rel/Op/Punct is involved.
+int interAtomMu(AtomClass l, AtomClass r, Style style) {
+    if (style == Style::Script || style == Style::ScriptScript) {
+        return 0;
+    }
+    if (l == AtomClass::Rel || r == AtomClass::Rel) {
+        return 5; // thick
+    }
+    if (l == AtomClass::Bin || r == AtomClass::Bin) {
+        return 4; // medium
+    }
+    if (l == AtomClass::Op || r == AtomClass::Op) {
+        return 3; // thin
+    }
+    if (l == AtomClass::Punct) {
+        return 3;
+    }
+    return 0;
+}
+
+struct Resolved {
+    Face face;
+    std::uint32_t glyphId;
+};
+
+// Resolve (face, cp) to a glyph, falling back to the roman face when the chosen face lacks it.
+Resolved resolveGlyph(FontSet& fonts, Face face, char32_t cp) {
+    const std::uint32_t g = fonts.shaper(face).glyphForCodepoint(cp);
+    if (g == 0 && face != Face::Roman) {
+        if (const std::uint32_t rg = fonts.shaper(Face::Roman).glyphForCodepoint(cp); rg != 0) {
+            return {Face::Roman, rg};
+        }
+    }
+    return {face, g};
+}
+
+// A one-glyph box from a resolved (face, glyphId) at sizePx.
+Box glyphBox(FontSet& fonts, Face face, std::uint32_t glyphId, float sizePx) {
+    Shaper& sh = fonts.shaper(face);
+    const float scale = sizePx / static_cast<float>(sh.unitsPerEm());
+    Box b;
+    b.glyphs.push_back({face, glyphId, 0.0f, 0.0f, sizePx});
+    b.width = sh.glyphAdvance(glyphId) * scale;
+    const EncodedGlyph& e = sh.encodeGlyph(glyphId);
+    if (!e.blank) {
+        b.ascent = std::max(0.0f, e.extents.maxY * scale);
+        b.descent = std::max(0.0f, -e.extents.minY * scale);
+        const float ic = sh.hasMathTable() ? sh.mathItalicCorrection(glyphId) * scale : 0.0f;
+        const float overhang = std::max(0.0f, e.extents.maxX * scale - b.width);
+        b.italicCorr = std::max(ic, overhang);
+    }
+    return b;
+}
+
+// Forward decls (mutual recursion).
+Box layoutList(FontSet& fonts, const List& list, Style style, float basePx);
+Box layoutNode(FontSet& fonts, const Node& node, Style style, float basePx);
+
+Box layoutSymbol(FontSet& fonts, const Symbol& s, Style style, float basePx) {
+    const float sizePx = sizeFor(style, basePx, fonts);
+    Face face = Face::Math;
+    char32_t cp = s.cp;
+    switch (s.alphabet) {
+    case Alphabet::MathItalic:
+        face = isAsciiLetter(cp) ? Face::Italic : Face::Math;
+        break;
+    case Alphabet::Upright:
+        face = Face::Roman;
+        break;
+    case Alphabet::Bold:
+        face = Face::Math;
+        cp = toBoldMath(cp);
+        break;
+    case Alphabet::MathSymbol:
+        face = Face::Math;
+        break;
+    }
+    const Resolved r = resolveGlyph(fonts, face, cp);
+    Box b = glyphBox(fonts, r.face, r.glyphId, sizePx);
+    b.cls = s.cls;
+    return b;
+}
+
+Box layoutFraction(FontSet& fonts, const Fraction& f, Style style, float basePx) {
+    const float sizePx = sizeFor(style, basePx, fonts);
+    const Style cs = fracChildStyle(style);
+    Box num = layoutList(fonts, f.num, cs, basePx);
+    Box den = layoutList(fonts, f.den, cs, basePx);
+
+    Shaper& m = fonts.shaper(Face::Math);
+    const float u2px = sizePx / static_cast<float>(m.unitsPerEm());
+    const float axis = m.mathConstant(MC::axisHeight) * u2px;
+    const float t = m.mathConstant(MC::fractionRuleThickness) * u2px;
+    const float numGap = m.mathConstant(MC::fractionNumeratorGapMin) * u2px;
+    const float denGap = m.mathConstant(MC::fractionDenominatorGapMin) * u2px;
+    const float numShift = m.mathConstant(MC::fractionNumeratorShiftUp) * u2px;
+    const float denShift = m.mathConstant(MC::fractionDenominatorShiftDown) * u2px;
+
+    // Numerator high enough that its bottom clears the rule by numGap; symmetric for denom.
+    const float up = std::max(numShift, axis + t * 0.5f + numGap + num.descent);
+    const float down = std::max(denShift, -axis + t * 0.5f + denGap + den.ascent);
+    const float width = std::max(num.width, den.width);
+
+    Box b;
+    b.width = width;
+    b.cls = AtomClass::Inner;
+    translate(num, (width - num.width) * 0.5f, up);
+    translate(den, (width - den.width) * 0.5f, -down);
+    appendBox(b, num);
+    appendBox(b, den);
+    b.rules.push_back({0.0f, axis - t * 0.5f, width, axis + t * 0.5f});
+    b.ascent = up + num.ascent;
+    b.descent = down + den.descent;
+    return b;
+}
+
+Box layoutScripted(FontSet& fonts, const Scripted& sc, Style style, float basePx) {
+    Box nuc = layoutList(fonts, sc.nucleus, style, basePx);
+    const float sizePx = sizeFor(style, basePx, fonts);
+    Shaper& m = fonts.shaper(Face::Math);
+    const float u2px = sizePx / static_cast<float>(m.unitsPerEm());
+    const Style ss = smaller(style);
+
+    Box b = nuc;
+    b.cls = nuc.cls;
+    const float supX = nuc.width + nuc.italicCorr;
+    const float subX = nuc.width;
+    float up = 0.0f;
+    float down = 0.0f;
+    Box sup;
+    Box sub;
+
+    if (sc.hasSup) {
+        sup = layoutList(fonts, sc.sup, ss, basePx);
+        const float def = m.mathConstant(MC::superscriptShiftUp) * u2px;
+        const float dropMax = m.mathConstant(MC::superscriptBaselineDropMax) * u2px;
+        const float botMin = m.mathConstant(MC::superscriptBottomMin) * u2px;
+        up = std::max({def, nuc.ascent - dropMax, botMin + sup.descent});
+    }
+    if (sc.hasSub) {
+        sub = layoutList(fonts, sc.sub, ss, basePx);
+        const float def = m.mathConstant(MC::subscriptShiftDown) * u2px;
+        const float dropMin = m.mathConstant(MC::subscriptBaselineDropMin) * u2px;
+        const float topMax = m.mathConstant(MC::subscriptTopMax) * u2px;
+        down = std::max({def, nuc.descent + dropMin, sub.ascent - topMax});
+    }
+    if (sc.hasSup && sc.hasSub) {
+        const float gapMin = m.mathConstant(MC::subSuperscriptGapMin) * u2px;
+        const float gap = (up - sup.descent) - (sub.ascent - down);
+        if (gap < gapMin) {
+            down += gapMin - gap;
+        }
+    }
+
+    float width = nuc.width;
+    if (sc.hasSup) {
+        translate(sup, supX, up);
+        appendBox(b, sup);
+        width = std::max(width, supX + sup.width);
+        b.ascent = std::max(b.ascent, up + sup.ascent);
+    }
+    if (sc.hasSub) {
+        translate(sub, subX, -down);
+        appendBox(b, sub);
+        width = std::max(width, subX + sub.width);
+        b.descent = std::max(b.descent, down + sub.descent);
+    }
+    b.width = width;
+    b.italicCorr = 0.0f;
+    return b;
+}
+
+// Non-stretch delimiters (stage 2): the delimiter glyphs at the body's size around the body.
+// Stage 3 adds vertical stretch (glyph variants / assemblies) to match the body height.
+Box layoutDelimited(FontSet& fonts, const Delimited& d, Style style, float basePx) {
+    const float sizePx = sizeFor(style, basePx, fonts);
+    Box body = layoutList(fonts, d.body, style, basePx);
+    Box out;
+    out.cls = AtomClass::Inner;
+    float x = 0.0f;
+    if (d.left != 0) {
+        const Resolved r = resolveGlyph(fonts, Face::Math, d.left);
+        Box l = glyphBox(fonts, r.face, r.glyphId, sizePx);
+        translate(l, x, 0.0f);
+        appendBox(out, l);
+        x += l.width;
+        out.ascent = std::max(out.ascent, l.ascent);
+        out.descent = std::max(out.descent, l.descent);
+    }
+    translate(body, x, 0.0f);
+    appendBox(out, body);
+    x += body.width;
+    out.ascent = std::max(out.ascent, body.ascent);
+    out.descent = std::max(out.descent, body.descent);
+    if (d.right != 0) {
+        const Resolved r = resolveGlyph(fonts, Face::Math, d.right);
+        Box rb = glyphBox(fonts, r.face, r.glyphId, sizePx);
+        translate(rb, x, 0.0f);
+        appendBox(out, rb);
+        x += rb.width;
+        out.ascent = std::max(out.ascent, rb.ascent);
+        out.descent = std::max(out.descent, rb.descent);
+    }
+    out.width = x;
+    return out;
+}
+
+// Stage-2 placeholders (refined in stage 3): a radical draws the surd glyph then the radicand;
+// an accent draws just its base (the mark is added in stage 3).
+Box layoutRadical(FontSet& fonts, const Radical& r, Style style, float basePx) {
+    const float sizePx = sizeFor(style, basePx, fonts);
+    Box radicand = layoutList(fonts, r.radicand, style, basePx);
+    const Resolved surd = resolveGlyph(fonts, Face::Math, 0x221A);
+    Box s = glyphBox(fonts, surd.face, surd.glyphId, sizePx);
+    Box out;
+    out.cls = AtomClass::Ord;
+    appendBox(out, s);
+    translate(radicand, s.width, 0.0f);
+    appendBox(out, radicand);
+    out.width = s.width + radicand.width;
+    out.ascent = std::max(s.ascent, radicand.ascent);
+    out.descent = std::max(s.descent, radicand.descent);
+    return out;
+}
+
+Box layoutAccent(FontSet& fonts, const Accent& a, Style style, float basePx) {
+    Box b = layoutList(fonts, a.base, style, basePx); // stage 3: place the accent / overbar rule
+    b.cls = AtomClass::Ord;
+    return b;
+}
+
+Box layoutNode(FontSet& fonts, const Node& node, Style style, float basePx) {
+    if (const auto* s = std::get_if<Symbol>(&node.v)) {
+        return layoutSymbol(fonts, *s, style, basePx);
+    }
+    if (const auto* f = std::get_if<Fraction>(&node.v)) {
+        return layoutFraction(fonts, *f, style, basePx);
+    }
+    if (const auto* sc = std::get_if<Scripted>(&node.v)) {
+        return layoutScripted(fonts, *sc, style, basePx);
+    }
+    if (const auto* d = std::get_if<Delimited>(&node.v)) {
+        return layoutDelimited(fonts, *d, style, basePx);
+    }
+    if (const auto* r = std::get_if<Radical>(&node.v)) {
+        return layoutRadical(fonts, *r, style, basePx);
+    }
+    if (const auto* ac = std::get_if<Accent>(&node.v)) {
+        return layoutAccent(fonts, *ac, style, basePx);
+    }
+    return {}; // Space handled in layoutList
+}
+
+Box layoutList(FontSet& fonts, const List& list, Style style, float basePx) {
+    Box out;
+    const float sizePx = sizeFor(style, basePx, fonts);
+    float x = 0.0f;
+    AtomClass prev = AtomClass::Ord;
+    bool havePrev = false;
+    for (const Node& n : list) {
+        if (const auto* sp = std::get_if<Space>(&n.v)) {
+            x += sp->em * sizePx;
+            havePrev = false;
+            continue;
+        }
+        Box b = layoutNode(fonts, n, style, basePx);
+        if (havePrev) {
+            x += static_cast<float>(interAtomMu(prev, b.cls, style)) / 18.0f * sizePx;
+        }
+        translate(b, x, 0.0f);
+        appendBox(out, b);
+        x += b.width;
+        out.ascent = std::max(out.ascent, b.ascent);
+        out.descent = std::max(out.descent, b.descent);
+        out.italicCorr = b.italicCorr; // the last atom's, for a trailing script
+        prev = b.cls;
+        havePrev = true;
+    }
+    out.width = x;
+    out.cls = AtomClass::Ord;
+    return out;
+}
+
+// Append a filled rect (top-left-origin px) as two screen-space triangles in clip space (NDC,
+// y-down) to the overlay (ADR-0028 screen channel).
+void pushRect(iv::vk::Overlay& ov, float x0, float yTop, float x1, float yBot, float halfW,
+              float halfH, const std::array<float, 4>& color) {
+    const auto v = [&](float px, float py) {
+        iv::vk::OverlayVertex o;
+        o.pos = {px / halfW - 1.0f, py / halfH - 1.0f, 0.0f};
+        o.color = color;
+        return o;
+    };
+    const iv::vk::OverlayVertex tl = v(x0, yTop);
+    const iv::vk::OverlayVertex tr = v(x1, yTop);
+    const iv::vk::OverlayVertex br = v(x1, yBot);
+    const iv::vk::OverlayVertex bl = v(x0, yBot);
+    ov.screenTriangles.push_back(tl);
+    ov.screenTriangles.push_back(tr);
+    ov.screenTriangles.push_back(br);
+    ov.screenTriangles.push_back(tl);
+    ov.screenTriangles.push_back(br);
+    ov.screenTriangles.push_back(bl);
+}
+
+} // namespace
+
+Metrics layout(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, FontSet& fonts, const List& list,
+               float penXpx, float penYpx, std::uint32_t fbWidth, std::uint32_t fbHeight,
+               float basePixelSize, const std::array<float, 4>& color) {
+    const Box b = layoutList(fonts, list, Style::Text, basePixelSize);
+    const float halfW = static_cast<float>(fbWidth) * 0.5f;
+    const float halfH = static_cast<float>(fbHeight) * 0.5f;
+    for (const auto& g : b.glyphs) {
+        // Box-local (+y up) baseline origin -> top-left-origin screen px.
+        glyphs.appendGlyph(g.face, g.glyphId, penXpx + g.x, penYpx - g.y, g.sizePx, fbWidth,
+                           fbHeight, color);
+    }
+    for (const auto& r : b.rules) {
+        pushRect(overlay, penXpx + r.x0, penYpx - r.y1, penXpx + r.x1, penYpx - r.y0, halfW, halfH,
+                 color);
+    }
+    return {b.width, b.ascent, b.descent};
+}
+
+} // namespace iv::text::math

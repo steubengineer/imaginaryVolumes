@@ -59,6 +59,7 @@ add_library(iv
     src/assert.cpp
     src/volume.cpp
     src/plot_axes.cpp
+    src/transfer.cpp
     src/vk/result.cpp
     src/vk/memory.cpp
     src/vk/context.cpp
@@ -150,7 +151,7 @@ if(IV_BUILD_TEXT)
 
     add_library(iv_text STATIC
         src/text/shaper.cpp src/text/bundled_font.cpp src/text/text_layout.cpp
-        src/text/annotations.cpp ${IV_FONT_GEN})
+        src/text/annotations.cpp src/text/legend_builder.cpp ${IV_FONT_GEN})
     add_library(iv::text ALIAS iv_text)
     # iv is PUBLIC: shaper.hpp includes iv/error.hpp. harfbuzz_core is PRIVATE:
     # HarfBuzz is hidden behind the Shaper (ADR-0004), only shaper.cpp needs it.

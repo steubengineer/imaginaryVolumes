@@ -10,6 +10,24 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0044 — ADR-0028 screen-space overlay is Vulkan clip space (y-down), not y-up
+- **Date / milestone:** 2026-06-20 / M8 (IMPLEMENT, ADR-0028)
+- **Choice / finding:** ADR-0028's Contract Specification noted screen-space overlay geometry
+  as "clip-space NDC, y-up" (and `rectNdc` "with y up"). Implementing against the existing
+  overlay shader (`overlay.vert` applies `transform * inPos` directly) and `appendText`'s
+  pixel→clip mapping (`ndcY = py/halfH − 1`, top-left origin) showed the identity-transform
+  screen space is **Vulkan clip space, y-DOWN** (y = −1 top, +1 bottom) — the same convention
+  as all post-transform overlay geometry (ADR-0021/0026) and the baked glyphs.
+- **Decision:** Use **y-down** for the new `Overlay::screenLines/screenTriangles` and for
+  `LegendSpec::rectNdc` (= {left, top, right, bottom}, top < bottom), documented in both
+  headers. The legend's "magnitude increases upward" is realized by mapping the normalized
+  position v=1 to the top (the smaller y). No code relies on the y-up reading.
+- **Rationale:** Consistency with the established overlay/glyph convention; a y-up screen
+  channel would need a hidden flip in the renderer and disagree with the world geometry.
+- **Contract impact:** none to ADR-0028's binding decision (legend content, host evaluators,
+  the screen-space channel mechanism). Corrects only the ADR's coordinate narrative — a
+  refinement like D-0016/D-0020, not a reversal, so no superseding ADR.
+
 ### D-0043 — M8 high-level plot facade: return a configured Viewer + headless renderPlot
 - **Date / milestone:** 2026-06-20 / M8 (CONTRACT) — maintainer decision
 - **Choice:** The shape of the one-call convenience API over the multi-step

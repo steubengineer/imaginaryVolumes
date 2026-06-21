@@ -73,6 +73,13 @@ struct GlyphVertex {
 struct Overlay {
     std::vector<OverlayVertex> lines;     // line list (consecutive vertex pairs)
     std::vector<OverlayVertex> triangles; // triangle list (consecutive vertex triples)
+    // Screen-space line/triangle lists drawn with the IDENTITY transform, independent of
+    // `transform` below (which carries the world view-projection for the 3D box/axes). For
+    // 2D HUD geometry that stays fixed on screen while lines/triangles track the camera — the
+    // legend swatch / border / ticks (ADR-0028). Vertices are Vulkan clip space (y-down: y=-1
+    // top, +1 bottom), like all overlay geometry after `transform` and like the baked glyphs.
+    std::vector<OverlayVertex> screenLines;
+    std::vector<OverlayVertex> screenTriangles;
     // Glyph quads + their Slug atlas (ADR-0023). `glyphs` is a triangle list (6
     // verts/glyph); `glyphAtlas` is the packed RGBA16I texel stream uploaded as an
     // R16G16B16A16_SINT uniform texel buffer that the Slug fragment shader samples.
@@ -80,11 +87,13 @@ struct Overlay {
     std::vector<GlyphVertex> glyphs;
     std::vector<std::int16_t> glyphAtlas;
     // Column-major 4x4 (GLSL convention); identity => positions are clip-space.
-    // Applies to lines/triangles; glyph positions are already clip-space.
+    // Applies to lines/triangles only; screenLines/screenTriangles use the identity and
+    // glyph positions are already clip-space.
     std::array<float, 16> transform{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                     0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     [[nodiscard]] bool empty() const noexcept {
-        return lines.empty() && triangles.empty() && glyphs.empty();
+        return lines.empty() && triangles.empty() && screenLines.empty() &&
+               screenTriangles.empty() && glyphs.empty();
     }
 };
 
@@ -151,18 +160,22 @@ private:
     [[nodiscard]] Result<GlyphResources> buildGlyphResources(
         const std::vector<GlyphVertex>& glyphs, std::span<const std::int16_t> atlas);
 
-    // Record the overlay graphics pass (ADR-0021): begin the render pass on
-    // `framebuffer`, draw `lineVertexCount` line vertices then `triangleVertexCount`
-    // triangle vertices from `vbuf` (lines at offset 0, triangles immediately after),
-    // then — if `glyphVertexCount > 0` — the Slug glyph quads (ADR-0023) from
-    // `glyphVbuf` with the atlas `glyphSet`, end. The caller transitions the target to
-    // eColorAttachmentOptimal and uploads the vertices beforehand. Passing glyph
-    // handles (not a GlyphResources) lets the headless and present paths share this.
+    // Record the overlay graphics pass (ADR-0021/0028): begin the render pass on
+    // `framebuffer`; draw the world-space `lineVertexCount` lines then
+    // `triangleVertexCount` triangles under `transform`; then the screen-space
+    // `screenLineVertexCount` lines + `screenTriangleVertexCount` triangles under the
+    // identity transform (ADR-0028 legend); then — if `glyphVertexCount > 0` — the Slug
+    // glyph quads (ADR-0023) from `glyphVbuf` with the atlas `glyphSet`, end. The vertex
+    // buffer packs the four lists in that order (lines, triangles, screenLines,
+    // screenTriangles). The caller transitions the target to eColorAttachmentOptimal and
+    // uploads the vertices beforehand. Passing handles (not a GlyphResources) lets the
+    // headless and present paths share this.
     void drawOverlay(::vk::CommandBuffer cmd, ::vk::Framebuffer framebuffer, ::vk::Extent2D extent,
                      ::vk::Buffer vbuf, std::uint32_t lineVertexCount,
-                     std::uint32_t triangleVertexCount, const std::array<float, 16>& transform,
-                     ::vk::Buffer glyphVbuf, ::vk::DescriptorSet glyphSet,
-                     std::uint32_t glyphVertexCount);
+                     std::uint32_t triangleVertexCount, std::uint32_t screenLineVertexCount,
+                     std::uint32_t screenTriangleVertexCount,
+                     const std::array<float, 16>& transform, ::vk::Buffer glyphVbuf,
+                     ::vk::DescriptorSet glyphSet, std::uint32_t glyphVertexCount);
 
     // Present-path glyph resources (ADR-0025): grow the persistent glyph vertex and
     // atlas (uniform texel) buffers on demand and re-upload `glyphs`/`atlas`,

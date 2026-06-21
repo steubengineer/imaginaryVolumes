@@ -6,6 +6,7 @@ add_executable(iv_tests
     test_volume.cpp
     test_orbit_camera.cpp
     test_plot_axes.cpp
+    test_transfer.cpp
     test_vk_context.cpp
     test_vk_offscreen.cpp
     test_vk_volume.cpp
@@ -16,7 +17,7 @@ target_link_libraries(iv_tests PRIVATE iv iv_warnings catch2_amalgamated)
 # Text shaping tests (ADR-0022), only when text is built. The rest of the suite
 # stays buildable with IV_BUILD_TEXT=OFF (the text-free isolation gate).
 if(IV_BUILD_TEXT)
-    target_sources(iv_tests PRIVATE test_text_shaper.cpp test_annotations.cpp)
+    target_sources(iv_tests PRIVATE test_text_shaper.cpp test_annotations.cpp test_legend.cpp)
     target_link_libraries(iv_tests PRIVATE iv_text)
 endif()
 

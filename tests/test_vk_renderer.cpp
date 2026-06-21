@@ -1,3 +1,4 @@
+#include "iv/transfer.hpp"
 #include "iv/vk/colormap_lut.hpp"
 #include "iv/vk/context.hpp"
 #include "iv/vk/renderer.hpp"
@@ -328,6 +329,41 @@ TEST_CASE("Renderer: LUT colormap matches the twilight table and differs from HS
                      std::abs(static_cast<int>(cl.g) - static_cast<int>(ch.g)) +
                      std::abs(static_cast<int>(cl.b) - static_cast<int>(ch.b));
     CHECK(diff > 20);
+    CHECK(ctx->validationClean());
+}
+
+// teeth (ADR-0028): the host phaseColor() evaluator — which the legend draws through — must
+// match the GPU shader's arg->color exactly, so the legend cannot drift from the render. A
+// saturated uniform field (m == max, density 1) over a black background renders ~ the phase
+// color directly; assert the center pixel equals iv::phaseColor for several phases in BOTH
+// colormap modes. Perturbing phaseColor (or the shared LUT) diverges from the GPU -> red.
+TEST_CASE("Renderer: host phaseColor matches the GPU colormap (ADR-0028)", "[vk][renderer]") {
+    auto ctx = Context::create();
+    REQUIRE(ctx.has_value());
+    auto rend = Renderer::create(*ctx);
+    REQUIRE(rend.has_value());
+
+    const GridDims d{8, 8, 8};
+    RenderParams p;
+    p.opacityMode = 0;
+    p.densityScale = 1.0f; // m == max -> mn == 1 -> alpha 1: the first sample saturates
+    p.background = {0.0f, 0.0f, 0.0f, 1.0f};
+
+    const float phases[5] = {-2.0f, -0.6f, 0.0f, 1.1f, 2.7f};
+    for (std::uint32_t mode = 0u; mode <= 1u; ++mode) {
+        p.colormapMode = mode;
+        for (const float phase : phases) {
+            auto vol = Volume::create(*ctx, uniformField(d, 1.0f, phase), d);
+            REQUIRE(vol.has_value());
+            auto img = rend->render(*vol, 32, 32, p);
+            REQUIRE(img.has_value());
+            const auto c = img->at(16, 16);
+            const std::array<float, 3> host = iv::phaseColor(phase, mode);
+            CHECK(near8(c.r, static_cast<int>(std::lround(host[0] * 255.0f)), 6));
+            CHECK(near8(c.g, static_cast<int>(std::lround(host[1] * 255.0f)), 6));
+            CHECK(near8(c.b, static_cast<int>(std::lround(host[2] * 255.0f)), 6));
+        }
+    }
     CHECK(ctx->validationClean());
 }
 

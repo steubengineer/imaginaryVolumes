@@ -96,9 +96,9 @@ Ubo fillUbo(const RenderParams& params, std::uint32_t width, std::uint32_t heigh
 static_assert(sizeof(OverlayVertex) == 7 * sizeof(float),
               "OverlayVertex must be tightly packed (vec3 pos + vec4 color = 28 bytes)");
 
-// Host-visible vertex buffer holding the overlay's line vertices followed by its
-// triangle vertices (ADR-0021): lines at offset 0, triangles at
-// lines.size()*sizeof(OverlayVertex). Precondition: !ov.empty().
+// Host-visible vertex buffer packing the overlay's four line/triangle lists in order
+// (ADR-0021/0028): lines, triangles, screenLines, screenTriangles — each immediately after
+// the previous. Precondition: at least one of those four is non-empty.
 struct OverlayBuffer {
     Unique<vkh::Buffer> buffer;
     Unique<vkh::DeviceMemory> memory;
@@ -106,7 +106,9 @@ struct OverlayBuffer {
 Result<OverlayBuffer> makeOverlayBuffer(vkh::Device device, vkh::PhysicalDevice phys,
                                         const Overlay& ov) {
     const vkh::DeviceSize bytes =
-        static_cast<vkh::DeviceSize>(ov.lines.size() + ov.triangles.size()) * sizeof(OverlayVertex);
+        static_cast<vkh::DeviceSize>(ov.lines.size() + ov.triangles.size() + ov.screenLines.size()
+                                     + ov.screenTriangles.size())
+        * sizeof(OverlayVertex);
     OverlayBuffer out;
     {
         auto m = take(device.createBuffer(vkh::BufferCreateInfo{}
@@ -135,14 +137,17 @@ Result<OverlayBuffer> makeOverlayBuffer(vkh::Device device, vkh::PhysicalDevice 
             return std::unexpected(std::move(mapped).error());
         }
         auto* dst = static_cast<unsigned char*>(*mapped);
-        const std::size_t lineBytes = ov.lines.size() * sizeof(OverlayVertex);
-        if (!ov.lines.empty()) {
-            std::memcpy(dst, ov.lines.data(), lineBytes);
-        }
-        if (!ov.triangles.empty()) {
-            std::memcpy(dst + lineBytes, ov.triangles.data(),
-                        ov.triangles.size() * sizeof(OverlayVertex));
-        }
+        std::size_t off = 0;
+        const auto put = [&](const std::vector<OverlayVertex>& v) {
+            if (!v.empty()) {
+                std::memcpy(dst + off, v.data(), v.size() * sizeof(OverlayVertex));
+            }
+            off += v.size() * sizeof(OverlayVertex);
+        };
+        put(ov.lines);
+        put(ov.triangles);
+        put(ov.screenLines);
+        put(ov.screenTriangles);
         device.unmapMemory(out.memory.get());
     }
     return out;
@@ -787,10 +792,13 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
     GlyphResources glyphRes;
     std::uint32_t overlayLineVerts = 0u;
     std::uint32_t overlayTriVerts = 0u;
+    std::uint32_t overlayScreenLineVerts = 0u;
+    std::uint32_t overlayScreenTriVerts = 0u;
     if (hasOverlay) {
-        // Line/triangle vertex buffer — only when there is line/triangle geometry
-        // (a glyphs-only overlay must not create a zero-size buffer).
-        if (!overlay->lines.empty() || !overlay->triangles.empty()) {
+        // Line/triangle vertex buffer — only when there is line/triangle geometry (world or
+        // screen-space); a glyphs-only overlay must not create a zero-size buffer.
+        if (!overlay->lines.empty() || !overlay->triangles.empty() ||
+            !overlay->screenLines.empty() || !overlay->screenTriangles.empty()) {
             auto ob = makeOverlayBuffer(device, physicalDevice_, *overlay);
             if (!ob) {
                 return std::unexpected(std::move(ob).error());
@@ -799,6 +807,8 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
             overlayMem = std::move(ob->memory);
             overlayLineVerts = static_cast<std::uint32_t>(overlay->lines.size());
             overlayTriVerts = static_cast<std::uint32_t>(overlay->triangles.size());
+            overlayScreenLineVerts = static_cast<std::uint32_t>(overlay->screenLines.size());
+            overlayScreenTriVerts = static_cast<std::uint32_t>(overlay->screenTriangles.size());
         }
         auto gr = buildGlyphResources(overlay->glyphs,
                                       std::span<const std::int16_t>(overlay->glyphAtlas));
@@ -861,8 +871,8 @@ Result<ImageReadback> Renderer::render(const Volume& volume, std::uint32_t width
                                          | vkh::AccessFlagBits::eColorAttachmentRead));
                     drawOverlay(cmd, overlayFb.get(), vkh::Extent2D{width, height},
                                 overlayBuf.get(), overlayLineVerts, overlayTriVerts,
-                                overlay->transform, glyphRes.vbuf.get(), glyphRes.set,
-                                glyphRes.vertexCount);
+                                overlayScreenLineVerts, overlayScreenTriVerts, overlay->transform,
+                                glyphRes.vbuf.get(), glyphRes.set, glyphRes.vertexCount);
                     cmd.pipelineBarrier(
                         vkh::PipelineStageFlagBits::eColorAttachmentOutput,
                         vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr,
@@ -1064,7 +1074,8 @@ Result<Renderer::GlyphResources> Renderer::buildGlyphResources(
 
 void Renderer::drawOverlay(vkh::CommandBuffer cmd, vkh::Framebuffer framebuffer,
                            vkh::Extent2D extent, vkh::Buffer vbuf, std::uint32_t lineVertexCount,
-                           std::uint32_t triangleVertexCount,
+                           std::uint32_t triangleVertexCount, std::uint32_t screenLineVertexCount,
+                           std::uint32_t screenTriangleVertexCount,
                            const std::array<float, 16>& transform, vkh::Buffer glyphVbuf,
                            vkh::DescriptorSet glyphSet, std::uint32_t glyphVertexCount) {
     cmd.beginRenderPass(vkh::RenderPassBeginInfo{}
@@ -1096,6 +1107,31 @@ void Renderer::drawOverlay(vkh::CommandBuffer cmd, vkh::Framebuffer framebuffer,
         cmd.bindPipeline(vkh::PipelineBindPoint::eGraphics, overlayTrianglePipeline_.get());
         cmd.bindVertexBuffers(0u, vbuf, triOffset);
         cmd.draw(triangleVertexCount, 1u, 0u, 0u);
+    }
+    // Screen-space (HUD) lines/triangles under the IDENTITY transform (ADR-0028 legend):
+    // packed after the world geometry, drawn before glyphs so labels sit on top.
+    if (screenLineVertexCount > 0u || screenTriangleVertexCount > 0u) {
+        constexpr std::array<float, 16> identity{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                                 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+        cmd.pushConstants<float>(overlayPipelineLayout_.get(), vkh::ShaderStageFlagBits::eVertex, 0u,
+                                 identity);
+        if (screenLineVertexCount > 0u) {
+            const vkh::DeviceSize off =
+                static_cast<vkh::DeviceSize>(lineVertexCount + triangleVertexCount)
+                * sizeof(OverlayVertex);
+            cmd.bindPipeline(vkh::PipelineBindPoint::eGraphics, overlayLinePipeline_.get());
+            cmd.bindVertexBuffers(0u, vbuf, off);
+            cmd.draw(screenLineVertexCount, 1u, 0u, 0u);
+        }
+        if (screenTriangleVertexCount > 0u) {
+            const vkh::DeviceSize off =
+                static_cast<vkh::DeviceSize>(lineVertexCount + triangleVertexCount
+                                             + screenLineVertexCount)
+                * sizeof(OverlayVertex);
+            cmd.bindPipeline(vkh::PipelineBindPoint::eGraphics, overlayTrianglePipeline_.get());
+            cmd.bindVertexBuffers(0u, vbuf, off);
+            cmd.draw(screenTriangleVertexCount, 1u, 0u, 0u);
+        }
     }
     // Slug glyph quads (ADR-0023): own pipeline + atlas descriptor set; positions
     // are already clip-space so the shared push-constant transform doesn't apply.
@@ -1391,11 +1427,17 @@ Status Renderer::recordFrame(vkh::CommandBuffer cmd, const Volume& volume,
     const bool hasOverlay = overlay != nullptr && !overlay->empty();
     std::uint32_t ovLineVerts = 0u;
     std::uint32_t ovTriVerts = 0u;
+    std::uint32_t ovScreenLineVerts = 0u;
+    std::uint32_t ovScreenTriVerts = 0u;
     if (hasOverlay) {
         ovLineVerts = static_cast<std::uint32_t>(overlay->lines.size());
         ovTriVerts = static_cast<std::uint32_t>(overlay->triangles.size());
+        ovScreenLineVerts = static_cast<std::uint32_t>(overlay->screenLines.size());
+        ovScreenTriVerts = static_cast<std::uint32_t>(overlay->screenTriangles.size());
         const vkh::DeviceSize bytes =
-            static_cast<vkh::DeviceSize>(ovLineVerts + ovTriVerts) * sizeof(OverlayVertex);
+            static_cast<vkh::DeviceSize>(ovLineVerts + ovTriVerts + ovScreenLineVerts
+                                         + ovScreenTriVerts)
+            * sizeof(OverlayVertex);
         if (bytes > frameOverlayCapacity_) {
             const vkh::Device device = device_;
             frameOverlayBuf_.reset();
@@ -1434,14 +1476,17 @@ Status Renderer::recordFrame(vkh::CommandBuffer cmd, const Volume& volume,
             frameOverlayCapacity_ = bytes;
         }
         auto* dst = static_cast<unsigned char*>(frameOverlayMapped_);
-        const std::size_t lineBytes = overlay->lines.size() * sizeof(OverlayVertex);
-        if (!overlay->lines.empty()) {
-            std::memcpy(dst, overlay->lines.data(), lineBytes);
-        }
-        if (!overlay->triangles.empty()) {
-            std::memcpy(dst + lineBytes, overlay->triangles.data(),
-                        overlay->triangles.size() * sizeof(OverlayVertex));
-        }
+        std::size_t off = 0;
+        const auto put = [&](const std::vector<OverlayVertex>& v) {
+            if (!v.empty()) {
+                std::memcpy(dst + off, v.data(), v.size() * sizeof(OverlayVertex));
+            }
+            off += v.size() * sizeof(OverlayVertex);
+        };
+        put(overlay->lines);
+        put(overlay->triangles);
+        put(overlay->screenLines);
+        put(overlay->screenTriangles);
     }
     // Present-path Slug glyph resources (ADR-0025): persist + re-upload (host prep,
     // before recording). Done even for a glyphs-only overlay.
@@ -1484,8 +1529,8 @@ Status Renderer::recordFrame(vkh::CommandBuffer cmd, const Volume& volume,
         // Present path draws lines/triangles AND Slug glyphs (ADR-0025): the
         // persistent glyph resources were (re)built above.
         drawOverlay(cmd, frameFramebuffer_.get(), dstExtent, frameOverlayBuf_.get(), ovLineVerts,
-                    ovTriVerts, overlay->transform, frameGlyphVbuf_.get(), frameGlyphSet_,
-                    frameGlyphVertexCount_);
+                    ovTriVerts, ovScreenLineVerts, ovScreenTriVerts, overlay->transform,
+                    frameGlyphVbuf_.get(), frameGlyphSet_, frameGlyphVertexCount_);
         cmd.pipelineBarrier(
             vkh::PipelineStageFlagBits::eColorAttachmentOutput,
             vkh::PipelineStageFlagBits::eTransfer, vkh::DependencyFlags{}, nullptr, nullptr,

@@ -164,6 +164,19 @@ TEST_CASE("parse: macro table + \\mathrm override (ADR-0033)", "[math]") {
     CHECK(sym(a[0])->cp == 0x03B1);
     CHECK(sym(a[0])->alphabet == Alphabet::MathSymbol);
 
+    // The full uppercase Greek alphabet, incl. the Latin-lookalikes stock LaTeX omits.
+    CHECK(sym(parse("\\Alpha")[0])->cp == 0x0391);
+    CHECK(sym(parse("\\Omicron")[0])->cp == 0x039F);
+    CHECK(sym(parse("\\Chi")[0])->cp == 0x03A7);
+    CHECK(sym(parse("\\Rho")[0])->cp == 0x03A1);
+    CHECK(sym(parse("\\Omega")[0])->cp == 0x03A9);
+    // Tensor product (\otimes binary) + the n-fold \bigotimes (a large operator).
+    CHECK(sym(parse("\\otimes")[0])->cp == 0x2297);
+    CHECK(sym(parse("\\bigotimes")[0])->cp == 0x2A02);
+    CHECK(sym(parse("\\bigotimes")[0])->cls == AtomClass::Op);
+    CHECK(sym(parse("\\nabla")[0])->cp == 0x2207);
+    CHECK(sym(parse("\\partial")[0])->cp == 0x2202);
+
     // A bare letter is math-italic; \mathrm makes it upright (operator name, differential d).
     CHECK(sym(parse("d")[0])->alphabet == Alphabet::MathItalic);
     auto r = parse("\\mathrm{d}");

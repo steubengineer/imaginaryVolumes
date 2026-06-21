@@ -4,6 +4,17 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M9 — Macro table additions
+
+Additive entries to the ADR-0033 §2 macro table (its designated extension point — no contract
+change), on maintainer request: the **full uppercase Greek alphabet** (adds the Latin-lookalike
+letters stock LaTeX gives no command for — `\Alpha \Beta \Epsilon \Zeta \Eta \Iota \Kappa \Mu \Nu
+\Omicron \Rho \Tau \Chi`, alongside the existing `\Gamma`…`\Omega`) and the **n-fold tensor /
+direct-sum operators** `\bigotimes` (U+2A02) / `\bigoplus` (U+2A01) — the binary `\otimes`/`\oplus`
+and `\nabla`/`\partial` were already present. All glyphs verified in NewCMMath-Book. **Teeth:** the
+`[math]` macro test pins the new names → codepoints (`\Alpha`→U+0391, `\Chi`→U+03A7, `\bigotimes`→
+U+2A02 with class Op, …); eyeballed the full Greek alphabet + `A⊗B⊗C` + `\bigotimes_{k=1}^{n}|ψ_k⟩`.
+
 ## M9 — Mathematical Typesetting in Labels
 
 Inline LaTeX-subset math in labels (`"Wave $f(x)=\frac{1}{2}$"`), via an owned subset parser +

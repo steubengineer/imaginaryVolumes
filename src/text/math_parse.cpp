@@ -41,13 +41,21 @@ const std::unordered_map<std::string, SymInfo>& symbolTable() {
         {"phi", {0x03D5, AtomClass::Ord}},       {"varphi", {0x03C6, AtomClass::Ord}},
         {"chi", {0x03C7, AtomClass::Ord}},       {"psi", {0x03C8, AtomClass::Ord}},
         {"omega", {0x03C9, AtomClass::Ord}},
-        // Greek uppercase (upright in TeX math)
+        // Greek uppercase (upright in TeX math) — the FULL alphabet, including the letters whose
+        // forms coincide with Latin capitals (stock LaTeX gives no command for those; provided
+        // here by request, the macro table being ADR-0033 §2's designated extension point).
+        {"Alpha", {0x0391, AtomClass::Ord}},     {"Beta", {0x0392, AtomClass::Ord}},
         {"Gamma", {0x0393, AtomClass::Ord}},     {"Delta", {0x0394, AtomClass::Ord}},
-        {"Theta", {0x0398, AtomClass::Ord}},     {"Lambda", {0x039B, AtomClass::Ord}},
-        {"Xi", {0x039E, AtomClass::Ord}},        {"Pi", {0x03A0, AtomClass::Ord}},
-        {"Sigma", {0x03A3, AtomClass::Ord}},     {"Upsilon", {0x03A5, AtomClass::Ord}},
-        {"Phi", {0x03A6, AtomClass::Ord}},       {"Psi", {0x03A8, AtomClass::Ord}},
-        {"Omega", {0x03A9, AtomClass::Ord}},
+        {"Epsilon", {0x0395, AtomClass::Ord}},   {"Zeta", {0x0396, AtomClass::Ord}},
+        {"Eta", {0x0397, AtomClass::Ord}},       {"Theta", {0x0398, AtomClass::Ord}},
+        {"Iota", {0x0399, AtomClass::Ord}},      {"Kappa", {0x039A, AtomClass::Ord}},
+        {"Lambda", {0x039B, AtomClass::Ord}},    {"Mu", {0x039C, AtomClass::Ord}},
+        {"Nu", {0x039D, AtomClass::Ord}},        {"Xi", {0x039E, AtomClass::Ord}},
+        {"Omicron", {0x039F, AtomClass::Ord}},   {"Pi", {0x03A0, AtomClass::Ord}},
+        {"Rho", {0x03A1, AtomClass::Ord}},       {"Sigma", {0x03A3, AtomClass::Ord}},
+        {"Tau", {0x03A4, AtomClass::Ord}},       {"Upsilon", {0x03A5, AtomClass::Ord}},
+        {"Phi", {0x03A6, AtomClass::Ord}},       {"Chi", {0x03A7, AtomClass::Ord}},
+        {"Psi", {0x03A8, AtomClass::Ord}},       {"Omega", {0x03A9, AtomClass::Ord}},
         // Binary operators
         {"times", {0x00D7, AtomClass::Bin}},     {"cdot", {0x22C5, AtomClass::Bin}},
         {"pm", {0x00B1, AtomClass::Bin}},        {"mp", {0x2213, AtomClass::Bin}},
@@ -82,6 +90,7 @@ const std::unordered_map<std::string, SymInfo>& symbolTable() {
         {"sum", {0x2211, AtomClass::Op}},        {"int", {0x222B, AtomClass::Op}},
         {"prod", {0x220F, AtomClass::Op}},       {"oint", {0x222E, AtomClass::Op}},
         {"bigcup", {0x22C3, AtomClass::Op}},     {"bigcap", {0x22C2, AtomClass::Op}},
+        {"bigotimes", {0x2A02, AtomClass::Op}},  {"bigoplus", {0x2A01, AtomClass::Op}},
     };
     return t;
 }

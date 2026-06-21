@@ -293,17 +293,36 @@ Box layoutScripted(FontSet& fonts, const Scripted& sc, Style style, float basePx
     return b;
 }
 
-// Non-stretch delimiters (stage 2): the delimiter glyphs at the body's size around the body.
-// Stage 3 adds vertical stretch (glyph variants / assemblies) to match the body height.
+// Stretchy delimiters (ADR-0033 §3): each delimiter glyph is replaced by the MATH size variant
+// tall enough to cover the body, then centered on the math axis. The body stays on its baseline.
 Box layoutDelimited(FontSet& fonts, const Delimited& d, Style style, float basePx) {
     const float sizePx = sizeFor(style, basePx, fonts);
     Box body = layoutList(fonts, d.body, style, basePx);
+    Shaper& m = fonts.shaper(Face::Math);
+    const float u2px = sizePx / static_cast<float>(m.unitsPerEm());
+    const float axis = m.mathConstant(MC::axisHeight) * u2px;
+
+    // Variant height needed to span the body symmetrically about the axis.
+    const float halfReq = std::max(body.ascent - axis, body.descent + axis);
+    const float targetFU = 2.0f * halfReq / u2px;
+
+    auto delim = [&](char32_t cp) -> Box {
+        const Resolved base = resolveGlyph(fonts, Face::Math, cp);
+        const std::uint32_t vg = m.glyphVariant(base.glyphId, true, targetFU);
+        Box gb = glyphBox(fonts, Face::Math, vg, sizePx);
+        const float center = 0.5f * (gb.ascent - gb.descent); // ink midpoint, +y up
+        const float dy = axis - center;                       // center the delimiter on the axis
+        translate(gb, 0.0f, dy);
+        gb.ascent += dy;
+        gb.descent -= dy;
+        return gb;
+    };
+
     Box out;
     out.cls = AtomClass::Inner;
     float x = 0.0f;
     if (d.left != 0) {
-        const Resolved r = resolveGlyph(fonts, Face::Math, d.left);
-        Box l = glyphBox(fonts, r.face, r.glyphId, sizePx);
+        Box l = delim(d.left);
         translate(l, x, 0.0f);
         appendBox(out, l);
         x += l.width;
@@ -316,8 +335,7 @@ Box layoutDelimited(FontSet& fonts, const Delimited& d, Style style, float baseP
     out.ascent = std::max(out.ascent, body.ascent);
     out.descent = std::max(out.descent, body.descent);
     if (d.right != 0) {
-        const Resolved r = resolveGlyph(fonts, Face::Math, d.right);
-        Box rb = glyphBox(fonts, r.face, r.glyphId, sizePx);
+        Box rb = delim(d.right);
         translate(rb, x, 0.0f);
         appendBox(out, rb);
         x += rb.width;
@@ -328,28 +346,91 @@ Box layoutDelimited(FontSet& fonts, const Delimited& d, Style style, float baseP
     return out;
 }
 
-// Stage-2 placeholders (refined in stage 3): a radical draws the surd glyph then the radicand;
-// an accent draws just its base (the mark is added in stage 3).
+// Radical (ADR-0033 §3): a surd variant tall enough for the radicand, a vinculum rule over the
+// radicand (radical gap + rule thickness from the font), and an optional degree up-left.
 Box layoutRadical(FontSet& fonts, const Radical& r, Style style, float basePx) {
     const float sizePx = sizeFor(style, basePx, fonts);
-    Box radicand = layoutList(fonts, r.radicand, style, basePx);
-    const Resolved surd = resolveGlyph(fonts, Face::Math, 0x221A);
-    Box s = glyphBox(fonts, surd.face, surd.glyphId, sizePx);
+    Box rc = layoutList(fonts, r.radicand, style, basePx);
+    Shaper& m = fonts.shaper(Face::Math);
+    const float u2px = sizePx / static_cast<float>(m.unitsPerEm());
+    const float ruleT = m.mathConstant(MC::radicalRuleThickness) * u2px;
+    const float gap = m.mathConstant(MC::radicalVerticalGap) * u2px;
+    const float extra = m.mathConstant(MC::radicalExtraAscender) * u2px;
+
+    const float targetFU = (rc.ascent + rc.descent + gap + ruleT) / u2px;
+    const std::uint32_t surd0 = m.glyphForCodepoint(0x221A);
+    const std::uint32_t surdG = m.glyphVariant(surd0, true, targetFU);
+    Box surd = glyphBox(fonts, Face::Math, surdG, sizePx);
+
+    const float ruleY = rc.ascent + gap;                 // bottom of the vinculum (+y up)
+    const float dy = (ruleY + ruleT) - surd.ascent;      // lift the surd so its top meets the rule
+    translate(surd, 0.0f, dy);
+    const float surdAscent = surd.ascent + dy;
+    const float surdDescent = surd.descent - dy;
+
     Box out;
     out.cls = AtomClass::Ord;
-    appendBox(out, s);
-    translate(radicand, s.width, 0.0f);
-    appendBox(out, radicand);
-    out.width = s.width + radicand.width;
-    out.ascent = std::max(s.ascent, radicand.ascent);
-    out.descent = std::max(s.descent, radicand.descent);
+    appendBox(out, surd);
+    const float bodyX = surd.width;
+    translate(rc, bodyX, 0.0f);
+    appendBox(out, rc);
+    out.rules.push_back({bodyX, ruleY, bodyX + rc.width, ruleY + ruleT});
+    out.width = bodyX + rc.width;
+    out.ascent = std::max(ruleY + ruleT + extra, surdAscent);
+    out.descent = std::max(rc.descent, surdDescent);
+
+    if (r.hasIndex && !r.index.empty()) {
+        Box idx = layoutList(fonts, r.index, Style::ScriptScript, basePx);
+        const float raise =
+            m.mathConstant(MC::radicalDegreeBottomRaisePercent) / 100.0f * (surdAscent + surdDescent);
+        const float shift = idx.width; // make room at the left for the degree
+        translate(out, shift, 0.0f);
+        translate(idx, 0.0f, -surdDescent + raise);
+        appendBox(out, idx);
+        out.width += shift;
+        out.ascent = std::max(out.ascent, -surdDescent + raise + idx.ascent);
+    }
     return out;
 }
 
+// Accents (ADR-0033 §3): \overline draws a rule over the base; \hat/\dot place the accent glyph
+// centered over the base ink (top-accent attachment), raised just above the base.
 Box layoutAccent(FontSet& fonts, const Accent& a, Style style, float basePx) {
-    Box b = layoutList(fonts, a.base, style, basePx); // stage 3: place the accent / overbar rule
-    b.cls = AtomClass::Ord;
-    return b;
+    const float sizePx = sizeFor(style, basePx, fonts);
+    Box base = layoutList(fonts, a.base, style, basePx);
+    Shaper& m = fonts.shaper(Face::Math);
+    const float u2px = sizePx / static_cast<float>(m.unitsPerEm());
+    base.cls = AtomClass::Ord;
+
+    if (a.overbar) {
+        const float gap = m.mathConstant(MC::overbarVerticalGap) * u2px;
+        const float t = m.mathConstant(MC::overbarRuleThickness) * u2px;
+        const float extra = m.mathConstant(MC::overbarExtraAscender) * u2px;
+        const float ruleY = base.ascent + gap;
+        base.rules.push_back({0.0f, ruleY, base.width, ruleY + t});
+        base.ascent = ruleY + t + extra;
+        return base;
+    }
+
+    const Resolved mark = resolveGlyph(fonts, Face::Math, a.mark);
+    if (mark.glyphId == 0) {
+        return base; // no accent glyph available
+    }
+    Box mk = glyphBox(fonts, Face::Math, mark.glyphId, sizePx);
+    // Combining accent glyphs carry offset, often zero-advance ink, so position by the ink box:
+    // center the accent ink over the base center, with its ink bottom just above the base top.
+    const EncodedGlyph& e = m.encodeGlyph(mark.glyphId);
+    const float inkMinX = e.extents.minX * u2px;
+    const float inkMaxX = e.extents.maxX * u2px;
+    const float inkMinY = e.extents.minY * u2px;
+    const float inkMaxY = e.extents.maxY * u2px;
+    const float gap = 0.05f * sizePx;
+    const float markX = base.width * 0.5f - 0.5f * (inkMinX + inkMaxX); // ink center over base
+    const float markBaseline = base.ascent + gap - inkMinY;            // ink bottom above base top
+    translate(mk, markX, markBaseline);
+    appendBox(base, mk);
+    base.ascent = std::max(base.ascent, markBaseline + inkMaxY);
+    return base;
 }
 
 Box layoutNode(FontSet& fonts, const Node& node, Style style, float basePx) {

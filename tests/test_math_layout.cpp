@@ -113,6 +113,65 @@ TEST_CASE("Layout: the fraction rule sits at the font's math axis (metrics-from-
     CHECK(ruleCenter == Catch::Approx(penY - axisPx).margin(1.5f));
 }
 
+TEST_CASE("Layout: glyph variants stretch delimiters/radicals (ADR-0033 stage 3)", "[math]") {
+    auto fonts = FontSet::create(40.0f);
+    REQUIRE(fonts.has_value());
+    auto& m = fonts->shaper(Face::Math);
+    const std::uint32_t paren = m.glyphForCodepoint(U'(');
+    REQUIRE(paren != 0u);
+
+    // A large target height selects a taller variant glyph than the base paren.
+    const std::uint32_t big = m.glyphVariant(paren, true, 5000.0f);
+    // teeth: if variants were ignored (return the input), big == paren and there is no growth.
+    REQUIRE(big != paren);
+    const auto eBase = m.encodeGlyph(paren);
+    const auto eBig = m.encodeGlyph(big);
+    const float hBase = eBase.extents.maxY - eBase.extents.minY;
+    const float hBig = eBig.extents.maxY - eBig.extents.minY;
+    CHECK(hBig > hBase * 1.5f); // the chosen variant is substantially taller
+}
+
+TEST_CASE("Layout: radical/overline/accent emit rules + marks (ADR-0033 stage 3)", "[math]") {
+    auto fonts = FontSet::create(40.0f);
+    REQUIRE(fonts.has_value());
+    auto run = [&](const char* src) {
+        MixedGlyphs g(*fonts);
+        iv::vk::Overlay ov;
+        const auto tree = iv::text::math::parse(src);
+        const auto met = iv::text::math::layout(g, ov, *fonts, tree, 0.0f, 0.0f, 256u, 256u, 40.0f,
+                                                kWhite);
+        g.finish(ov);
+        struct R {
+            iv::text::math::Metrics m;
+            std::size_t glyphs;
+            std::size_t rules;
+        };
+        return R{met, ov.glyphs.size(), ov.screenTriangles.size()};
+    };
+
+    const auto x = run("x");
+    // \sqrt draws a vinculum rule (and the surd raises the box well above the radicand).
+    const auto sqrtX = run("\\sqrt{x}");
+    CHECK(sqrtX.rules > 0u); // teeth: no vinculum -> 0 rules
+    CHECK(sqrtX.m.ascent > x.m.ascent + 2.0f);
+    CHECK(sqrtX.glyphs > x.glyphs); // the surd glyph is added
+
+    // \overline draws a rule above the base.
+    const auto over = run("\\overline{z}");
+    CHECK(over.rules > 0u);
+    CHECK(over.m.ascent > run("z").m.ascent + 1.0f);
+
+    // \hat adds an accent glyph above the base, raising the ascent (teeth: accent dropped -> equal).
+    const auto hatX = run("\\hat{x}");
+    CHECK(hatX.glyphs > x.glyphs);
+    CHECK(hatX.m.ascent > x.m.ascent + 1.0f);
+
+    // A stretchy \left(...\right) around a tall fraction is taller than around a small body.
+    const auto smallDelim = run("\\left(x\\right)");
+    const auto tallDelim = run("\\left(\\frac{a}{b}\\right)");
+    CHECK(tallDelim.m.ascent + tallDelim.m.descent > smallDelim.m.ascent + smallDelim.m.descent + 4.0f);
+}
+
 // End-to-end: \frac{1}{2} renders a real horizontal rule with ink above (1) and below (2),
 // validation-clean. teeth: drop the rule and the wide bright bar row vanishes.
 TEST_CASE("Layout: a fraction renders a rule with numerator above / denominator below",

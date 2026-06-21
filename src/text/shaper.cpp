@@ -288,4 +288,35 @@ float Shaper::mathItalicCorrection(std::uint32_t glyphId) const noexcept {
         impl_->encodeFont, static_cast<hb_codepoint_t>(glyphId)));
 }
 
+std::uint32_t Shaper::glyphVariant(std::uint32_t glyphId, bool vertical,
+                                   float minExtent) const noexcept {
+    const hb_direction_t dir = vertical ? HB_DIRECTION_TTB : HB_DIRECTION_LTR;
+    hb_ot_math_glyph_variant_t vars[32];
+    unsigned count = 32;
+    hb_ot_math_get_glyph_variants(impl_->encodeFont, static_cast<hb_codepoint_t>(glyphId), dir, 0,
+                                  &count, vars);
+    std::uint32_t largest = glyphId;
+    float largestAdv = 0.0f;
+    for (unsigned i = 0; i < count; ++i) {
+        const float adv = static_cast<float>(vars[i].advance);
+        if (adv >= minExtent) {
+            return vars[i].glyph; // the smallest variant that is tall/wide enough
+        }
+        if (adv > largestAdv) {
+            largestAdv = adv;
+            largest = vars[i].glyph;
+        }
+    }
+    return largest; // nothing big enough -> the largest available (no part assembly)
+}
+
+float Shaper::mathTopAccentAttachment(std::uint32_t glyphId) const noexcept {
+    const hb_position_t p = hb_ot_math_get_glyph_top_accent_attachment(
+        impl_->encodeFont, static_cast<hb_codepoint_t>(glyphId));
+    if (p == 0) {
+        return glyphAdvance(glyphId) * 0.5f; // unspecified -> the glyph center
+    }
+    return static_cast<float>(p);
+}
+
 } // namespace iv::text

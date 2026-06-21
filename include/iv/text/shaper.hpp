@@ -153,6 +153,16 @@ public:
     // The MATH italic correction of a glyph, in font units (0 if none / no table).
     [[nodiscard]] float mathItalicCorrection(std::uint32_t glyphId) const noexcept;
 
+    // The stretched glyph variant of a delimiter / radical surd sized to at least `minExtent`
+    // font units along the given direction; returns `glyphId` unchanged if no larger variant
+    // exists (extreme-size part assemblies are not built — the largest single variant is used).
+    [[nodiscard]] std::uint32_t glyphVariant(std::uint32_t glyphId, bool vertical,
+                                             float minExtent) const noexcept;
+
+    // The horizontal attachment point (font units) for a top accent placed over `glyphId`
+    // (defaults to the glyph's advance/2 when the table has no entry).
+    [[nodiscard]] float mathTopAccentAttachment(std::uint32_t glyphId) const noexcept;
+
 private:
     Shaper() = default;
     struct Impl;

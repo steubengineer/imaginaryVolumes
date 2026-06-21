@@ -95,6 +95,18 @@ struct Overlay {
         return lines.empty() && triangles.empty() && screenLines.empty() &&
                screenTriangles.empty() && glyphs.empty();
     }
+    // Reset all geometry channels (the per-frame reset for a REUSED overlay). Leaves
+    // `transform` unchanged. buildAnnotations() calls this so composing buildAnnotations() +
+    // buildLegend() into one reused Overlay each frame does not accumulate — without it the
+    // screen-space legend (and any appended channel) would stack every frame.
+    void clear() noexcept {
+        lines.clear();
+        triangles.clear();
+        screenLines.clear();
+        screenTriangles.clear();
+        glyphs.clear();
+        glyphAtlas.clear();
+    }
 };
 
 class Renderer {

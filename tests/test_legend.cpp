@@ -6,6 +6,8 @@
 // this pins "the legend matches the transfer function/colormap".
 
 #include "iv/legend.hpp"
+#include "iv/plot_axes.hpp"
+#include "iv/text/annotations.hpp"
 #include "iv/text/bundled_font.hpp"
 #include "iv/text/legend_builder.hpp"
 #include "iv/text/shaper.hpp"
@@ -67,6 +69,34 @@ TEST_CASE("Legend: buildLegend populates screen channels + labels and honors sho
     spec.show = false;
     iv::text::buildLegend(off, spec, 256u, 256u, *shaper);
     CHECK(off.empty());
+}
+
+TEST_CASE("Legend: rebuilding into a reused overlay does not accumulate", "[legend]") {
+    // The viewer reuses ONE overlay every frame (buildAnnotations then buildLegend). The
+    // screen-space legend channels must be cleared each frame, or the swatch stacks copies →
+    // compounding opacity. buildAnnotations() resets all channels; buildLegend() appends.
+    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
+    REQUIRE(shaper.has_value());
+
+    iv::PlotAxes axes;
+    iv::LegendSpec spec;
+    spec.range = {0.01f, 1.0f};
+    iv::vk::Overlay ov;
+    iv::vk::RenderParams cam;
+
+    iv::text::buildAnnotations(ov, axes, cam, 256u, 256u, *shaper);
+    iv::text::buildLegend(ov, spec, 256u, 256u, *shaper);
+    const std::size_t triangles1 = ov.screenTriangles.size();
+    const std::size_t lines1 = ov.screenLines.size();
+    const std::size_t glyphs1 = ov.glyphs.size();
+    REQUIRE(triangles1 > 0);
+
+    // A second frame into the same overlay must produce the SAME counts, not doubled.
+    iv::text::buildAnnotations(ov, axes, cam, 256u, 256u, *shaper);
+    iv::text::buildLegend(ov, spec, 256u, 256u, *shaper);
+    CHECK(ov.screenTriangles.size() == triangles1);
+    CHECK(ov.screenLines.size() == lines1);
+    CHECK(ov.glyphs.size() == glyphs1);
 }
 
 TEST_CASE("Legend: swatch renders phase color across and opacity up (ADR-0028)", "[vk][legend]") {

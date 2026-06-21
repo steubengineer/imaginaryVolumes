@@ -129,10 +129,8 @@ void addCenteredLabel(Overlay& ov, Shaper& sh, std::string_view s, float cx, flo
 
 void buildAnnotations(Overlay& ov, const PlotAxes& axes, const iv::vk::RenderParams& camera,
                       std::uint32_t fbW, std::uint32_t fbH, Shaper& sh) {
-    ov.lines.clear();
-    ov.triangles.clear();
-    ov.glyphs.clear();
-    ov.glyphAtlas.clear();
+    ov.clear(); // reset ALL channels incl. the screen-space legend ones, so a reused overlay
+                // (the viewer rebuilds one every frame) does not accumulate (ADR-0026/0028).
 
     const float aspect = fbH > 0u ? static_cast<float>(fbW) / static_cast<float>(fbH) : 1.0f;
     ov.transform = iv::vk::viewProjection(camera, aspect);

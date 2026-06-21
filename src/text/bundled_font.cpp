@@ -7,4 +7,14 @@ std::span<const std::byte> bundledFont() noexcept {
                                       ncm_book_otf_size);
 }
 
+std::span<const std::byte> bundledFontItalic() noexcept {
+    return std::span<const std::byte>(reinterpret_cast<const std::byte*>(ncm_bookitalic_otf_data),
+                                      ncm_bookitalic_otf_size);
+}
+
+std::span<const std::byte> bundledFontMath() noexcept {
+    return std::span<const std::byte>(reinterpret_cast<const std::byte*>(ncmmath_book_otf_data),
+                                      ncmmath_book_otf_size);
+}
+
 } // namespace iv::text

@@ -36,3 +36,5 @@
 | [ADR-0029](0029-high-level-plot-facade.md) | High-Level Plot Facade (`makePlot` / `renderPlot`) | Accepted | — |
 | [ADR-0030](0030-thickness-corrected-legend-opacity.md) | Thickness-Corrected Legend Opacity | Accepted | — |
 | [ADR-0031](0031-legend-field-name.md) | Legend Field Name | Accepted | — |
+| [ADR-0032](0032-mixed-font-glyph-substrate.md) | Mixed-Font Glyph Substrate (Multiple Faces per Overlay) | Accepted | — |
+| [ADR-0033](0033-inline-math-labels.md) | Inline Math in Labels — `$…$` Model, LaTeX Subset & OpenType-MATH Layout | Accepted | — |

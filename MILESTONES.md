@@ -32,6 +32,7 @@ renderer headlessly via deterministic pixel readback before the window exists.
 7. **M7** — Bounding box, ticked axes & labels (declarative axis model, nice ticks,
    world-space box/axes + labels in both paths).
 8. **M8** — Legend/colorbar & high-level plot API.
+9. **M9** — Mathematical typesetting in labels (inline LaTeX-subset math).
 
 ---
 
@@ -313,3 +314,46 @@ renderer headlessly via deterministic pixel readback before the window exists.
   refined at CONTRACT from a discrete "phase wheel + bar" to a unified 2-D phase × magnitude
   swatch (D-0042, maintainer's design); consistency with the render is structural (the legend
   draws through the same host evaluators the GPU cross-check pins to the shader).
+
+## M9 — Mathematical Typesetting in Labels (Inline LaTeX-Subset Math)
+- **Status:** Planned.
+- **Goal:** Turn every plot label (title, axis labels/units, tick values, legend captions)
+  into a string that may carry **inline LaTeX math** in `$…$` islands — e.g.
+  `"Wave $f(x)=\frac{1}{2}$"` renders `Wave ` as text and the `$…$` span as **publication-quality
+  typeset math** (an italic variable `f`, upright digits, a real fraction with its bar on the math
+  axis). Realized **without a TeX engine**: an owned parser for a controlled LaTeX subset feeds an
+  owned **OpenType-MATH box-layout** engine, which takes every positioning constant from the
+  bundled **NewCMMath** face via HarfBuzz's `hb_ot_math_*` API (already compiled into the vendored
+  HarfBuzz) and emits glyph quads through a new **mixed-font** overlay channel. Text outside `$`
+  renders exactly as it does today; this is the next major capability after the M1–M8 founding arc
+  (the backlog "big item", B-0015, with B-0012 as its enabling prerequisite).
+- **Done when:**
+  - [ ] The overlay renders **multiple font faces in one frame** (upright roman + true CM italic +
+        the math face), lifting the single-atlas limit (ADR-0023/0025); this resolves **B-0012**
+        and lets the legend field name render in true italic.
+  - [ ] A label `"Wave $f(x)=\frac{1}{2}$"` renders the text run and the math span correctly —
+        italic variable, upright digits/operators, a `\frac` with the rule at the math axis —
+        **headless** (`renderPlot`) and **in the viewer** (`makePlot`).
+  - [ ] The supported subset renders: superscripts/subscripts (`^`/`_`), `\frac`, `\sqrt`
+        (and `\sqrt[n]`), `\left…\right` **stretchy** delimiters, accents (`\hat`/`\dot`/
+        `\overline`), **bra–ket** (`\bra`/`\ket`/`\braket`/`\ketbra`), `{}` grouping, a curated
+        Greek/symbol/operator macro table, and `\mathrm`/`\mathbf` style switches — with **all**
+        positioning drawn from the font's MATH table (no hardcoded TeX constants).
+  - [ ] **Backward-compat invariant:** a label with **no `$`** produces a byte-identical glyph
+        stream to the pre-M9 text path (math is strictly opt-in by the delimiter).
+- **Expected ADRs:**
+  - **Mixed-font / multi-atlas glyph substrate** — generalize the overlay's one-atlas glyph
+    channel to N faces; vendor the GFL **NewCM10-BookItalic** and **NewCMMath-Book** faces
+    (extends ADR-0021/0023/0025; the §1.1 dependency decision for the two faces).
+  - **Inline-math label model + subset grammar + OpenType-MATH layout** — the `$…$` text/math
+    split, the controlled LaTeX subset, and the box-layout engine over `hb_ot_math_*`
+    (governs the new public label semantics; consumes ADR-0024/0026/0028/0031 label fields).
+- **Tests with teeth:** parser + layout reference checks (teeth: swap `\frac` numerator/denominator,
+  zero a MATH constant, or skip the italic correction → glyph positions diverge from the recorded
+  reference → red); the **no-`$` backward-compat** invariant (teeth: if the math path leaks into a
+  plain label, the glyph stream differs → red); mixed-font draw (teeth: bind the wrong atlas → the
+  italic/math run renders as wrong/`.notdef` glyphs → red); an end-to-end headless render of a
+  math-labeled plot, validation-clean. Refined at M9 CONTRACT.
+- **Actual ADRs:** (filled at completion.)
+- **Note:** if the subset/layout work trends past ~3 ADRs it splits into sequential sub-milestones
+  (§2.2); the intended shape is 2 ADRs (substrate, then the math model/layout).

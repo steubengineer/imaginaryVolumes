@@ -136,22 +136,32 @@ option(IV_BUILD_TEXT "Build text shaping (vendored HarfBuzz) and the bundled fon
 if(IV_BUILD_TEXT)
     add_subdirectory(third_party/harfbuzz)
 
-    # Embed the bundled default face (third_party/fonts) as a byte array so the
-    # default font needs no runtime file path (ADR-0022; same pattern as shaders).
-    set(IV_FONT_SRC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/NewCM10-Book.otf)
-    set(IV_FONT_GEN ${CMAKE_CURRENT_BINARY_DIR}/ncm_book_otf.cpp)
-    add_custom_command(
-        OUTPUT ${IV_FONT_GEN}
-        COMMAND ${CMAKE_COMMAND} -DIN=${IV_FONT_SRC} -DSYMBOL=ncm_book_otf
-                -DNS=iv::text -DHDR=iv/text/bundled_font.hpp -DOUT=${IV_FONT_GEN}
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bytes.cmake
-        DEPENDS ${IV_FONT_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bytes.cmake
-        COMMENT "embed NewCM10-Book.otf"
-        VERBATIM)
+    # Embed the bundled faces (third_party/fonts) as byte arrays so the default fonts
+    # need no runtime file path (ADR-0022/0032; same pattern as shaders). Three GFL
+    # faces: Roman (Book), the true Italic, and the OpenType MATH face (M9).
+    function(iv_embed_font OTF SYMBOL OUTVAR)
+        set(_gen ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOL}.cpp)
+        add_custom_command(
+            OUTPUT ${_gen}
+            COMMAND ${CMAKE_COMMAND}
+                    -DIN=${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/${OTF} -DSYMBOL=${SYMBOL}
+                    -DNS=iv::text -DHDR=iv/text/bundled_font.hpp -DOUT=${_gen}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bytes.cmake
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/${OTF}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bytes.cmake
+            COMMENT "embed ${OTF}"
+            VERBATIM)
+        set(${OUTVAR} ${_gen} PARENT_SCOPE)
+    endfunction()
+    iv_embed_font(NewCM10-Book.otf       ncm_book_otf       IV_FONT_GEN_ROMAN)
+    iv_embed_font(NewCM10-BookItalic.otf ncm_bookitalic_otf IV_FONT_GEN_ITALIC)
+    iv_embed_font(NewCMMath-Book.otf     ncmmath_book_otf   IV_FONT_GEN_MATH)
 
     add_library(iv_text STATIC
-        src/text/shaper.cpp src/text/bundled_font.cpp src/text/text_layout.cpp
-        src/text/annotations.cpp src/text/legend_builder.cpp src/plot_render.cpp ${IV_FONT_GEN})
+        src/text/shaper.cpp src/text/bundled_font.cpp src/text/font_set.cpp
+        src/text/text_layout.cpp src/text/annotations.cpp src/text/legend_builder.cpp
+        src/plot_render.cpp
+        ${IV_FONT_GEN_ROMAN} ${IV_FONT_GEN_ITALIC} ${IV_FONT_GEN_MATH})
     add_library(iv::text ALIAS iv_text)
     # iv is PUBLIC: shaper.hpp includes iv/error.hpp. harfbuzz_core is PRIVATE:
     # HarfBuzz is hidden behind the Shaper (ADR-0004), only shaper.cpp needs it.

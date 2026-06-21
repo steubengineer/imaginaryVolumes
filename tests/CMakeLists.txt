@@ -18,7 +18,7 @@ target_link_libraries(iv_tests PRIVATE iv iv_warnings catch2_amalgamated)
 # stays buildable with IV_BUILD_TEXT=OFF (the text-free isolation gate).
 if(IV_BUILD_TEXT)
     target_sources(iv_tests PRIVATE test_text_shaper.cpp test_annotations.cpp test_legend.cpp
-                                    test_plot.cpp)
+                                    test_glyph_substrate.cpp test_plot.cpp)
     target_link_libraries(iv_tests PRIVATE iv_text)
 endif()
 

@@ -10,6 +10,32 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0048 — M9 math typesetting via an owned subset engine over OpenType MATH (not a TeX engine)
+- **Date / milestone:** 2026-06-21 / M9 (CONTRACT) — maintainer-approved
+- **Choice:** How to render inline LaTeX math in labels (`"Wave $f(x)=\frac{1}{2}$"`) between two
+  rejected poles: linking/calling a **TeX engine** (heavy runtime dep) vs. **owning a TeX
+  processor** (heavy ownership). Options surveyed: shell out to LaTeX (dvisvgm); embed a C++
+  math-subset lib (microTeX/cLaTeXMath); own a small subset parser + OpenType-MATH layout;
+  hand-rolled offsets.
+- **Decision:** **Own a small, spec-backed engine** — a recursive-descent parser for a controlled
+  LaTeX subset feeding an OpenType-MATH box-layout engine, taking **every positioning constant
+  from the font** via HarfBuzz's `hb_ot_math_*` API (confirmed compiled into our vendored
+  HarfBuzz: `src/harfbuzz.cc` includes `hb-ot-math.cc`, no `HB_NO_MATH`) and the bundled
+  **NewCMMath** face, emitting glyphs through a new **mixed-font** overlay channel. Split into
+  **two ADRs**: ADR-0032 (mixed-font/multi-atlas substrate + vendor the GFL italic & math faces;
+  resolves the B-0012 prerequisite) then ADR-0033 (the `$…$` model, subset grammar & layout).
+- **Rationale:** The OpenType MATH table externalizes exactly the font-specific constants classic
+  TeX hardcodes, and MathML Core specifies the finite consuming algorithm — so "own the math
+  layout" shrinks to a bounded, reference-documented box-assembly over a subset we control, reusing
+  what we already vendor (HarfBuzz + Slug) with **zero new third-party code**. Embedding microTeX
+  was rejected as tens of kLOC + its own font/graphics world (convention-leak burden, ADR-0004/§8)
+  for a small subset; a TeX engine/shell-out rejected as heavy + resolution-locked.
+- **Contract impact:** ADR-0032 + ADR-0033 (both Accepted 2026-06-21). Subset redlines (maintainer):
+  add `\hat`/`\dot`/`\overline` + full bra–ket; no matrices; `fieldName` default → `"$f$"`;
+  legend scientific-notation deferred → B-0016.
+- **Deferred alternatives:** TeX engine / LaTeX shell-out; microTeX embed; hand-rolled offsets —
+  not re-litigated absent a subset outgrowing the owned engine.
+
 ### D-0047 — Legend field name (additive; default upright "f"; true italic deferred)
 - **Date / milestone:** 2026-06-20 / post-M8 — maintainer decision
 - **Choice:** How the caller names the field shown on the color legend (its `|·|` / `arg(·)`
@@ -977,6 +1003,12 @@ the same day. Future entries prepend above.)
   mixed fonts).
 - **Contract link:** would extend ADR-0023/0025 (glyph overlay) + amend D-0035 (bundle
   BookItalic); no `LegendSpec`/`PlotOptions` API change (upright → italic is rendering-only).
+- **Resolved:** M9 / **ADR-0032** (Accepted 2026-06-21) — the mixed-font glyph substrate landed:
+  `iv::text::FontSet` (roman/italic/math) + `iv::text::MixedGlyphs` merge multiple faces into one
+  overlay via a single rebased Slug atlas, and `NewCM10-BookItalic` is now bundled
+  (`bundledFontItalic()`). True-italic variables/field name are rendered by the ADR-0033 math path
+  (the legend `fieldName` default is now `"$f$"`, D-0048), so the upright→italic switch is realized
+  there. The architectural blocker is gone.
 
 ### B-0013 — Legend & label visual polish (placement, label placement, sizes)
 - **Origin:** maintainer review, 2026-06-20 (graphics-polish pass).
@@ -1013,3 +1045,22 @@ the same day. Future entries prepend above.)
   plotting library; math typesetting is the next major capability, likely its own milestone (M9).
 - **Revisit when:** after the appearance polish; scope as a milestone with its own ADRs.
 - **Contract link:** extends the text layer (ADR-0022/0023) substantially; new math-layout ADRs.
+- **Status:** **Being addressed in M9** — ADR-0032 (mixed-font substrate, resolves the B-0012
+  prerequisite) + ADR-0033 (inline `$…$` math model, subset & OpenType-MATH layout), both
+  Proposed 2026-06-21.
+
+### B-0016 — Scientific/superscript notation for the legend magnitude axis (`1×10⁻³`)
+- **Origin:** maintainer review, 2026-06-21 (M9 CONTRACT, redline on ADR-0033 point 4).
+- **What:** Render the legend's **magnitude (vertical) axis** tick labels in
+  scientific/superscript form — e.g. `1×10⁻³` instead of `1e-3` / `1.2` — using the M9 math
+  layout. These are **auto-generated** numeric labels (`legend_builder` decade/linear ticks),
+  not caller strings, so they fall outside ADR-0033's "caller-supplied labels are math-aware"
+  scope; promoting them is a generated-label formatting change layered on the math engine.
+- **Why deferred:** the maintainer wants it, but it is cleaner to land **after** the M9 math
+  engine exists (ADR-0033) — it reuses the math layout to typeset a generated mantissa×10^exp
+  rather than parsing a caller string. Keeping it out of M9 keeps the M9 backward-compat
+  invariant (a `$`-free label is byte-identical) clean.
+- **Revisit when:** once ADR-0033's math layout lands; a small follow-on (M9 tail or a polish
+  pass).
+- **Contract link:** refines the ADR-0028 legend tick generation (and ADR-0024 `formatTick`
+  policy) to emit math; presentation-layer, likely a journaled refinement once the engine exists.

@@ -4,6 +4,29 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## M9 — Mathematical Typesetting in Labels (in progress)
+
+Inline LaTeX-subset math in labels (`"Wave $f(x)=\frac{1}{2}$"`), via an owned subset parser +
+OpenType-MATH box layout over `hb_ot_math_*` (no TeX engine; D-0048). Two ADRs: ADR-0032 (the
+mixed-font substrate) then ADR-0033 (the `$…$` model + subset + layout).
+
+- **Mixed-font glyph substrate** (ADR-0032; resolves **B-0012**): multiple font faces — roman
+  (`NewCM10-Book`), true italic (`NewCM10-BookItalic`), and the OpenType MATH face
+  (`NewCMMath-Book`) — now coexist in one overlay via a **single merged Slug atlas** with rebased
+  `glyphLoc`, leaving the renderer / pipeline / `GlyphVertex` **unchanged** (the merge lives in
+  `iv::text`). New: the two GFL faces vendored + embedded (`bundledFontItalic()`/`bundledFontMath()`),
+  an `iv::text::FontSet` (owns the three Shapers), and `iv::text::MixedGlyphs` (accumulate
+  face-tagged glyph quads → `finish()` concatenates each used face's atlas + rebases). A face with
+  no glyphs adds no atlas bytes; Roman is merged first (base 0), so roman-only output is byte-identical
+  to the single-face `appendText`. **Teeth:** (1) FontSet loads three *genuinely distinct* faces —
+  the italic `f` outline differs from roman's (catches the same font bundled twice); (2) **merge
+  rebase** — the italic glyph's `glyphLoc` equals roman's texel count; *demonstrated red* by
+  disabling the rebase (`+= base*0` → italic `glyphLoc` `0` vs expected `366` → fail), restored to
+  green; (3) **backward compat** — a roman-only `MixedGlyphs` build is byte-identical (glyphs +
+  atlas) to `appendText`; (4) two faces render from one merged overlay, both halves paint,
+  validation-clean. Gates: full suite **1097/84**; ASan+UBSan **2/2**; text-free + GLFW-free builds
+  OK; no HarfBuzz type in any public header.
+
 ## Post-M8 — Legend Fixes
 
 Bug fixes and refinements to the M8 legend, after the maintainer eyeballed it in the viewer.

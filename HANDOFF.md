@@ -1,10 +1,11 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-21 by the M8 + post-M8 legend session (Claude / Opus 4.8)
-**Active milestone:** **M8 Complete & locked.** With it the founding milestone arc
-**M1–M8 is complete** — the "usable scientific plotting library" goal is met. Next work is
-a maintainer-driven **legend visual-polish pass** and the open Backlog; a new milestone (if
-any) starts at ORIENT → CONTRACT.
+**Last updated:** 2026-06-21 by the M9 session (Claude / Opus 4.8)
+**Active milestone:** **M9 — Mathematical typesetting in labels (in progress).** Inline
+LaTeX-subset math in labels via an owned subset parser + OpenType-MATH box layout over
+`hb_ot_math_*` (no TeX engine; D-0048). Two Accepted ADRs: **ADR-0032 (mixed-font substrate) —
+DONE & committed**; **ADR-0033 (inline `$…$` math model + subset + layout) — NEXT, not started.**
+(The founding arc M1–M8 is complete & locked.)
 
 ## Current State
 The library does the full job end to end: ingest a complex field (`std::complex<float|
@@ -52,26 +53,39 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** M8 is closed; the working tree is clean at the M8 commits.
+**ADR-0033 (inline math) — NOT STARTED.** The M9 substrate (ADR-0032) is done, verified, and
+committed; the tree is clean at that checkpoint. Next is the math layer itself. No partial ADR-0033
+code exists yet.
 
 ## Next Action
-M8 is achieved and locked. The next session is a **graphics-polish pass** the maintainer scoped
-(2026-06-20); agenda, in roughly increasing size:
-- **Legend placement**, **label placements**, and **various label sizes** across the plot — pure
-  presentation (**B-0013**). Default panel `LegendSpec::rectNdc = {0.60,−0.45,0.84,0.45}`;
-  ADR-0026/0028 layout constants. Journaled refinements, no ADR.
-- **Show the legend `L` in the data's units** (**B-0014**) — it is now in unit-cube path-length
-  (ADR-0030); needs a units convention (per-axis extents differ) + the `PlotAxes` extents plumbed
-  to the legend ⇒ a short ADR.
-- **Additional colormaps** beyond twilight + HSV (**B-0005**; would extend ADR-0014).
-- **Mathematical typesetting in labels** — the big item (**B-0015**; LaTeX-style math), building
-  on the deferred true-italic / mixed-font work (**B-0012**); likely its own milestone (**M9**)
-  with its own ADRs.
-- Also open: **B-0009** (declare a project LICENSE).
+**Implement ADR-0033 — inline `$…$` math labels** (subset parser + OpenType-MATH box layout). It
+draws through the ADR-0032 substrate now in place. Suggested staging:
+1. **Tokenizer / text-math split** — split a label on unescaped `$` (`\$` literal; unmatched `$` →
+   literal + diagnostic, no throw). Text spans → `MixedGlyphs::appendRun(Face::Roman, …)`.
+2. **Subset parser** — recursive descent over the ADR-0033 §2 grammar (atoms; `^`/`_`; `\frac`;
+   `\sqrt[n]`; `\hat`/`\dot`/`\overline`; `\left…\right` + bra–ket; `{}`; `\mathrm`/`\mathbf`/
+   `\mathit`; spacing; the curated Greek/symbol/operator macro table) → a box tree. Unknown CS →
+   literal fallback + diagnostic.
+3. **OpenType-MATH layout** — box constructors (hlist, fraction, scripts, radical, stretchy
+   delimiter, accent, overline) taking EVERY constant from `hb_ot_math_get_constant` /
+   `_glyph_italics_correction` / `_glyph_kerning` / `_glyph_variants` / `_glyph_assembly` (NO
+   hardcoded TeX constants — the metrics-from-font invariant). Style chain display→…→scriptscript.
+   Emit positioned glyphs via `MixedGlyphs::appendGlyph(face, glyphId, x, y, size, …)`.
+4. **Label integration** — route caller-supplied labels (PlotAxes title/label/unit; LegendSpec
+   `fieldName`/overrides) through the math-aware path; migrate `buildAnnotations`/`buildLegend`
+   from `appendText` to `MixedGlyphs` (roman-only path is byte-identical — the ADR-0032 backward-
+   compat test pins this). Set `LegendSpec::fieldName` default → `"$f$"` (amends ADR-0031).
+5. **Tests with teeth** (ADR-0033 §Verification): split/escape; parser structure; layout-from-font
+   (zero a MATH constant / skip italic correction → positions move → red); no-`$` backward-compat
+   byte-identity; mixed-face usage; `\foo` fallback; end-to-end math-labeled render.
 
-Each item touching a public contract starts at ORIENT → CONTRACT with a new ADR (Proposed →
-Accepted) before code; the pure-appearance tweaks are journaled refinements (like D-0045). Eyeball
-the current legend: `DISPLAY=:1 ./build/debug/iv_view --input example_data/wf1.c64 --dims 150 150 150`.
+Needs HarfBuzz's `hb_ot_math_*` (confirmed compiled into the vendored `harfbuzz.cc`). Probe the
+math face from `iv::text::FontSet::create(px).shaper(Face::Math)`. **B-0016** (legend `1×10⁻³`
+tick notation) is a deferred follow-on AFTER the engine exists — not part of ADR-0033.
+
+### Deferred (post-M9) maintainer polish agenda (2026-06-20)
+- **B-0013** legend/label placement & sizes (presentation); **B-0014** legend `L` in data units
+  (short ADR); **B-0005** more colormaps; **B-0009** project LICENSE; **B-0016** legend sci-notation.
 
 ## Known-Broken / Blocked
 - **Nothing broken.** The tree builds and all gates pass.
@@ -124,6 +138,16 @@ the current legend: `DISPLAY=:1 ./build/debug/iv_view --input example_data/wf1.c
   composing a legend calls it FIRST, then `buildLegend` (which appends, sharing one `Shaper` so
   glyph atlas offsets stay valid). A new overlay channel MUST be added to `Overlay::clear()`.
   Labels sit on the box silhouette offset outward — the outward offset guards no-data-overlap.
+- **Mixed-font substrate (ADR-0032, M9):** multiple faces in one overlay go through
+  `iv::text::MixedGlyphs` (build with `appendRun(Face,…)` / `appendGlyph(Face,glyphId,…)`, then
+  ONE `finish(overlay)`), NOT repeated `appendText`. `finish()` concatenates each used face's Slug
+  atlas onto `overlay.glyphAtlas` and **rebases** that face's `glyphLoc` by the running texel base —
+  so the renderer/pipeline/`GlyphVertex` are unchanged (one atlas, one draw). Roman is face 0 at
+  base 0, so a roman-only build is byte-identical to `appendText` (a `[text]` test pins this — keep
+  it green when migrating `buildAnnotations`/`buildLegend` to `MixedGlyphs`). DON'T mix
+  `appendText`(roman) and `MixedGlyphs`(roman) on ONE overlay (double-stores roman's atlas). Faces:
+  `FontSet::create(px)` → roman/italic/math (`bundledFont()`/`Italic()`/`Math()`); the math face
+  carries the OpenType MATH table for ADR-0033.
 - **`glslc` is a required build tool** (ADR-0011/D-0022). Shaders in `shaders/`; SPIR-V
   embedded (regenerated each build). The colormap LUT is committed data
   (`include/iv/vk/colormap_lut.hpp`) — regenerate with `tools/gen_colormap.py` if it changes;

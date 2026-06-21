@@ -99,6 +99,30 @@ TEST_CASE("Legend: rebuilding into a reused overlay does not accumulate", "[lege
     CHECK(ov.glyphs.size() == glyphs1);
 }
 
+TEST_CASE("Legend: log mode uses decade ticks that track the window (B-0011)", "[legend]") {
+    auto shaper = iv::text::Shaper::create(iv::text::bundledFont(), 16.0f);
+    REQUIRE(shaper.has_value());
+
+    iv::LegendSpec base;
+    base.range = {1e-6f, 1.0f};
+    base.opacityMode = 1; // log
+
+    iv::LegendSpec narrow = base;
+    narrow.logDecades = 2.0f; // window spans ~3 decade ticks
+    iv::LegendSpec wide = base;
+    wide.logDecades = 6.0f; // ~7 decade ticks
+
+    iv::vk::Overlay on;
+    iv::vk::Overlay ow;
+    iv::text::buildLegend(on, narrow, 256u, 256u, *shaper);
+    iv::text::buildLegend(ow, wide, 256u, 256u, *shaper);
+
+    // A wider decade window shows more decade ticks -> more right-edge tick lines + labels. If
+    // the decade window were ignored (e.g. linear ticks over ~[0,max]), the two would match.
+    CHECK(ow.screenLines.size() > on.screenLines.size());
+    CHECK(ow.glyphs.size() > on.glyphs.size());
+}
+
 TEST_CASE("Legend: swatch renders phase color across and opacity up (ADR-0028)", "[vk][legend]") {
     auto ctx = Context::create();
     REQUIRE(ctx.has_value());

@@ -4,6 +4,26 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M8 — Legend Fixes
+
+Bug fixes and a refinement to the M8 legend, after the maintainer eyeballed it in the viewer.
+
+- **Truly transparent swatch** (D-0045): removed the opaque backing panel — the swatch now
+  composites straight over the scene with its real alpha, matching the plot's saturation instead
+  of desaturating partial-opacity cells toward a gray tone.
+- **Per-frame overlay reset** (`Overlay::clear()`): `buildAnnotations` cleared the world channels
+  but not the M8 screen-space ones, so the viewer's reused overlay accumulated a fresh legend
+  swatch every frame (compounding opacity + unbounded memory growth). `buildAnnotations` now
+  resets ALL channels. **Teeth:** rebuilding into one reused overlay twice keeps the
+  screen-channel counts equal (was 18432 → 36864 → red). `renderPlot` (fresh overlay each call)
+  was unaffected, which is why the headless tests missed it.
+- **Decade ticks in log mode** (resolves B-0011): the legend's magnitude ticks were linear
+  nice-numbers that barely moved as the decade window changed (loBound ≈ 0 for high-dynamic-range
+  data), so the legend looked unresponsive to `--decades`. Log mode now uses decade ticks (powers
+  of 10) over the active window, evenly spaced on the log bar and tracking it. **Teeth:** a wider
+  decade window emits more tick lines + labels. Linear mode unchanged (`ticksFor`).
+- Gates after: full suite **746/76**; ASan+UBSan green; `iv_view` (via makePlot) validation-CLEAN.
+
 ## M8 — Legend/Colorbar & High-Level Plot API
 
 **Status:** Complete (2026-06-20).

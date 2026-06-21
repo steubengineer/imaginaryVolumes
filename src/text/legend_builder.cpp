@@ -66,6 +66,11 @@ void leftLabel(Overlay& ov, Shaper& sh, std::string_view s, float x, float cy, s
                          {kLabelColor, sh.pixelSize()});
 }
 
+// Label for a power-of-ten magnitude tick (log mode): "1" for 10^0, else "1e<exp>".
+std::string decadeLabel(int e) {
+    return e == 0 ? std::string("1") : "1e" + std::to_string(e);
+}
+
 } // namespace
 
 void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std::uint32_t fbH,
@@ -129,26 +134,40 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
                       pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 2.4f * sh.pixelSize(), fbW, fbH);
     }
 
-    // (5) Magnitude ticks + value labels on the right edge: nice numbers (ADR-0024 ticksFor)
-    //     over the active domain, each placed at its normalized ramp height transferNormalized.
-    float loBound = 0.0f;
-    if (spec.opacityMode != 0u) {
-        loBound = (spec.logDecades > 0.0f) ? spec.range.max * std::pow(10.0f, -spec.logDecades)
-                                           : spec.range.minPositive;
-    }
-    const iv::AxisTicks mt = iv::ticksFor(static_cast<double>(loBound),
-                                          static_cast<double>(spec.range.max), iv::kDefaultMajor, 1);
-    for (const double mv : mt.major) {
-        const float pos =
-            iv::transferNormalized(static_cast<float>(mv), spec.range, spec.opacityMode,
-                                   spec.logDecades);
+    // (5) Magnitude ticks + value labels on the right edge, each placed at its normalized ramp
+    //     height transferNormalized. Linear mode: nice numbers over [0, max] (ADR-0024 ticksFor).
+    //     Log mode: DECADE ticks (powers of 10) over the active window [lo, max] — they are
+    //     evenly spaced on the log bar and TRACK the decade window, so changing it visibly
+    //     relabels the axis (ADR-0027; resolves B-0011), unlike linear ticks which barely move
+    //     for high-dynamic-range data.
+    const auto emitMagTick = [&](double mv, const std::string& label) {
+        const float pos = iv::transferNormalized(static_cast<float>(mv), spec.range,
+                                                 spec.opacityMode, spec.logDecades);
         if (pos < -0.001f || pos > 1.001f) {
-            continue;
+            return;
         }
         const float y = yBot + (yTop - yBot) * pos;
         sline(ov, xR, y, xR + kTickLenNdc, y, kBorderColor);
-        leftLabel(ov, sh, iv::formatTick(mv, mt.step), pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y),
-                  fbW, fbH);
+        leftLabel(ov, sh, label, pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y), fbW, fbH);
+    };
+    const double maxM = static_cast<double>(spec.range.max);
+    if (spec.opacityMode == 0u) { // linear: nice numbers over [0, max]
+        const iv::AxisTicks mt = iv::ticksFor(0.0, maxM, iv::kDefaultMajor, 1);
+        for (const double mv : mt.major) {
+            emitMagTick(mv, iv::formatTick(mv, mt.step));
+        }
+    } else { // log: decade ticks over the active window
+        const double lo = (spec.logDecades > 0.0f)
+                              ? maxM * std::pow(10.0, -static_cast<double>(spec.logDecades))
+                              : static_cast<double>(spec.range.minPositive);
+        if (lo > 0.0 && maxM > lo) {
+            const int e0 = static_cast<int>(std::ceil(std::log10(lo)));
+            const int e1 = static_cast<int>(std::floor(std::log10(maxM)));
+            const int de = std::max(1, (e1 - e0) / 10); // thin to <= ~11 ticks for huge ranges
+            for (int e = e0; e <= e1; e += de) {
+                emitMagTick(std::pow(10.0, e), decadeLabel(e));
+            }
+        }
     }
     if (!spec.magnitudeLabel.empty()) {
         centeredLabel(ov, sh, spec.magnitudeLabel, pxX(0.5f * (xL + xR)),

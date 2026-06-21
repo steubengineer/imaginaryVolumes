@@ -30,10 +30,10 @@ ticked, labeled axes (M7), a **phase × magnitude legend** (M8), and a **one-cal
   now builds its labeled plot via `makePlot`; the per-frame closure rebuilds box/axes + legend
   from the LIVE params so hotkeys update the legend. Decisions D-0042…D-0044.
 
-Decisions D-0001…D-0044; Backlog B-0005 (more colormaps), B-0006 (VMA), B-0009 (LICENSE),
-B-0011 (log-spaced legend ticks) open; B-0007/0008/0010 resolved. ADR index current
-(**ADR-0001…0029 Accepted**; 0009 superseded by 0015). Gates: full suite **738/74**;
-ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **738/74**;
+Decisions D-0001…D-0044; Backlog B-0005 (more colormaps), B-0006 (VMA), B-0009 (LICENSE) open;
+B-0007/0008/0010/0011 resolved. ADR index current
+(**ADR-0001…0029 Accepted**; 0009 superseded by 0015). Gates: full suite **746/76**;
+ASan+UBSan `ctest` green; GLFW-free (renderPlot present, makePlot absent) **746/76**;
 text-free (transfer core, no HarfBuzz) **565/57**; no HarfBuzz type in any public header;
 `iv_view` (via makePlot) validation-CLEAN on the vortex and a 150³ dataset.
 
@@ -49,8 +49,8 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 ## Next Action
 The founding arc is done. The most immediate likely next step is the maintainer's deferred
 **legend visual-polish pass** — appearance/placement of the 2-D swatch (the default panel is
-`LegendSpec::rectNdc = {0.60,−0.45,0.84,0.45}`; tune sizes/margins/backing), and **B-0011**
-(log-spaced magnitude ticks in log mode). Other open work: **B-0005** (more colormaps),
+`LegendSpec::rectNdc = {0.60,−0.45,0.84,0.45}`; tune sizes/margins). Other open work:
+**B-0005** (more colormaps),
 **B-0009** (declare a project LICENSE), and **LaTeX math** labels (deferred since M6). Any of
 these touching a public contract starts at ORIENT → CONTRACT with a new ADR (Proposed →
 Accepted) before code. The legend's appearance is pure presentation — eyeball it with
@@ -80,6 +80,10 @@ Accepted) before code. The legend's appearance is pure presentation — eyeball 
   before glyphs. The legend's "magnitude up" maps normalized position v=1 → the top (smaller
   y). `LegendSpec::rectNdc = {left, top, right, bottom}` (top < bottom). The overlay vertex
   buffer packs **lines, triangles, screenLines, screenTriangles** in that order (both paths).
+  The swatch has **no opaque backing** — it composites over the scene with real alpha so it
+  truly reflects transparency and matches the plot saturation (D-0045; don't re-add a backing).
+  Log mode uses **decade ticks** (powers of 10) so the legend tracks the decade window (B-0011);
+  linear mode uses `ticksFor`.
 - **Facade targets / isolation** (ADR-0029): `renderPlot` is in **`iv_text`** (needs text,
   not GLFW); `makePlot` is in **`iv_plot`** (gated on `IV_BUILD_VIEWER AND IV_BUILD_TEXT`).
   Core `iv` / tests / `iv_bench` still build with both gates OFF (the isolation gates). The
@@ -88,10 +92,12 @@ Accepted) before code. The legend's appearance is pure presentation — eyeball 
   `PlotOptions` holds the transfer state ONCE and fans it to both RenderParams and LegendSpec.
 - **Annotations (ADR-0024/0026):** `iv::vk::viewProjection` must stay consistent with the
   ADR-0012 ray camera (the `[viewproj]` collinearity test is the guard — don't drop the
-  y-down/top-left flip). `buildAnnotations` **clears** the overlay + sets `transform`; a
-  caller composing a legend calls it FIRST, then `buildLegend` (which appends, sharing one
-  `Shaper` so glyph atlas offsets stay valid). Labels sit on the box silhouette offset outward
-  — the outward offset is load-bearing for no-data-overlap.
+  y-down/top-left flip). `buildAnnotations` **resets ALL overlay channels** (via
+  `Overlay::clear()` — incl. the screen-space legend ones; it is the **per-frame reset** for a
+  reused overlay, or the screen channels accumulate every frame) + sets `transform`; a caller
+  composing a legend calls it FIRST, then `buildLegend` (which appends, sharing one `Shaper` so
+  glyph atlas offsets stay valid). A new overlay channel MUST be added to `Overlay::clear()`.
+  Labels sit on the box silhouette offset outward — the outward offset guards no-data-overlap.
 - **`glslc` is a required build tool** (ADR-0011/D-0022). Shaders in `shaders/`; SPIR-V
   embedded (regenerated each build). The colormap LUT is committed data
   (`include/iv/vk/colormap_lut.hpp`) — regenerate with `tools/gen_colormap.py` if it changes;

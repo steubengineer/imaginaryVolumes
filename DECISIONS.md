@@ -905,3 +905,9 @@ the same day. Future entries prepend above.)
   a refinement, not a correctness issue.
 - **Revisit when:** the legend visual-polish pass, or if log-mode legends look sparse.
 - **Contract link:** would extend ADR-0028 (legend tick generation) / ADR-0024 (`ticksFor`).
+- **Resolved:** 2026-06-20 (post-M8) — `buildLegend` now emits **decade ticks** (powers of 10,
+  labeled `1e<exp>`) in log mode over the active window `[max·10^-decades, max]`, evenly spaced
+  on the log bar and tracking the window (thinned to ≤ ~11 for huge ranges); linear mode keeps
+  `ticksFor`. Prompted by the legend looking unresponsive to `--decades` (linear ticks barely
+  move when loBound ≈ 0). A presentation refinement of ADR-0028's tick generation (no binding
+  contract change), so a recorded resolution — no superseding ADR (§2.8).

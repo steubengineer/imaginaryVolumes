@@ -20,7 +20,6 @@ using iv::vk::OverlayVertex;
 using Color = std::array<float, 4>;
 
 constexpr Color kBorderColor{0.85f, 0.86f, 0.92f, 1.0f};
-constexpr Color kBackingColor{0.12f, 0.12f, 0.15f, 1.0f}; // opaque panel so the swatch alpha reads
 constexpr Color kLabelColor{1.0f, 1.0f, 1.0f, 1.0f};
 constexpr float kPi = 3.14159265358979323846f;
 constexpr int kCols = 64;            // swatch phase resolution (color interpolates between)
@@ -84,13 +83,13 @@ void buildLegend(Overlay& ov, const iv::LegendSpec& spec, std::uint32_t fbW, std
     const auto pxX = [&](float ndc) { return (ndc + 1.0f) * halfW; }; // NDC -> pixel (top-left)
     const auto pxY = [&](float ndc) { return (ndc + 1.0f) * halfH; };
 
-    // (1) Opaque backing panel so the swatch's partial opacity reads against a known tone.
-    squad(ov, xL, yTop, xR, yBot, kBackingColor, kBackingColor, kBackingColor, kBackingColor);
-
-    // (2) The 2-D swatch. Width = phase (-pi .. +pi, color = phaseColor); height = normalized
-    //     magnitude v in [0,1] (low at the bottom, max at the top), alpha = clamp(v * density)
-    //     = transferOpacity at the magnitude whose position is v (ADR-0028). This gradient is
-    //     mode-independent; the mode only sets where magnitude VALUES sit (the right ticks).
+    // The 2-D swatch. Width = phase (-pi .. +pi, color = phaseColor); height = normalized
+    // magnitude v in [0,1] (low at the bottom, max at the top), alpha = clamp(v * density) =
+    // transferOpacity at the magnitude whose position is v (ADR-0028). There is NO opaque
+    // backing: the swatch composites straight over the scene with its real alpha, so it truly
+    // reflects transparency and matches the plot's saturation (a backing tone would desaturate
+    // partial-opacity cells). The gradient is mode-independent; the mode only sets where
+    // magnitude VALUES sit (the right ticks).
     for (int j = 0; j < kCols; ++j) {
         const float u0 = static_cast<float>(j) / static_cast<float>(kCols);
         const float u1 = static_cast<float>(j + 1) / static_cast<float>(kCols);

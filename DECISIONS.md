@@ -10,6 +10,27 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0045 — Legend swatch is truly transparent (no opaque backing); corrects ADR-0028 detail
+- **Date / milestone:** 2026-06-20 / M8 (post-completion polish) — maintainer feedback
+- **Choice / finding:** ADR-0028's Decision described the swatch as "composited over an opaque
+  backing quad ... so partial opacity reads against a known tone." In the viewer the maintainer
+  observed this makes the legend an opaque object whose backing tone (0.12 gray) differs from
+  the plot background and **desaturates** partial-opacity cells (mixing every hue toward gray).
+- **Decision:** Remove the opaque backing. The swatch composites straight over the scene with
+  its real alpha, so the legend **truly reflects transparency** and matches the plot's
+  saturation (a low-opacity cell blends toward the same background as the data). Border, ticks,
+  and labels are unchanged.
+- **Rationale:** A colorbar with alpha must blend over the same background as the data to read
+  correctly; any opaque backing tone contaminates the hues. True transparency is also exactly
+  what the legend communicates (magnitude → opacity).
+- **Contract impact:** none. ADR-0028's binding contract (host evaluators, screen-space
+  channels, the legend drawing through the evaluators) is unchanged; this corrects the
+  non-binding "opaque backing" detail in its Decision prose — a refinement like D-0016/D-0020,
+  not a reversal, so no superseding ADR. The `[vk][legend]` teeth still hold (empty volume over
+  black: top opaque cyan, bottom transparent → black).
+- **Deferred alternatives:** an optional faint backing for readability over busy data (a future
+  LegendSpec field if it proves needed).
+
 ### D-0044 — ADR-0028 screen-space overlay is Vulkan clip space (y-down), not y-up
 - **Date / milestone:** 2026-06-20 / M8 (IMPLEMENT, ADR-0028)
 - **Choice / finding:** ADR-0028's Contract Specification noted screen-space overlay geometry

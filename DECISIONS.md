@@ -10,6 +10,24 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0047 — Legend field name (additive; default upright "f"; true italic deferred)
+- **Date / milestone:** 2026-06-20 / post-M8 — maintainer decision
+- **Choice:** How the caller names the field shown on the color legend (its `|·|` / `arg(·)`
+  captions), distinct from the verbose plot title, and how to render the math-variable italic.
+- **Decision:** **Additive** — keep `LegendSpec`/`PlotOptions` `magnitudeLabel`/`phaseLabel` as
+  explicit overrides (now **default empty**) AND add `fieldName` (default `"f"`); the caption is
+  the override if set, else derived `"|"+fieldName+"|"` / `"arg("+fieldName+")"` (via `LegendSpec`
+  methods). Default `"f"` → `|f|`, `arg(f)`. Rendered **upright** for now: true (CM) italic needs
+  a second font face + mixed-font **multi-atlas** glyph support (the overlay is single-atlas,
+  ADR-0023/0025), deferred to the visual-polish pass (**B-0012**); an oblique-sheared roman `f`
+  was rejected as a fake. The upright→italic switch will be rendering-only (no API change).
+- **Rationale:** Naming the field once is the least error-prone API; the override keeps full
+  flexibility; deferring true italic avoids an architectural change inside a small feature.
+- **Contract impact:** ADR-0031 (Accepted); additive amendment of the ADR-0028/0029 caption
+  defaults (`magnitudeLabel`/`phaseLabel` now default empty).
+- **Deferred alternatives:** replace (non-additive); default `"z"`; oblique slant; **true italic
+  now → B-0012**.
+
 ### D-0046 — Thickness-corrected legend opacity (tunable reference thickness + label)
 - **Date / milestone:** 2026-06-20 / post-M8 — maintainer decision
 - **Choice:** The legend (ADR-0028) plots the per-sample opacity `a = transferOpacity(m)`, but
@@ -936,3 +954,17 @@ the same day. Future entries prepend above.)
   `ticksFor`. Prompted by the legend looking unresponsive to `--decades` (linear ticks barely
   move when loBound ≈ 0). A presentation refinement of ADR-0028's tick generation (no binding
   contract change), so a recorded resolution — no superseding ADR (§2.8).
+
+### B-0012 — True italic field name (mixed-font / multi-atlas glyph overlay)
+- **Origin:** ADR-0031 (D-0047), 2026-06-20.
+- **What:** Render the legend's field name (and, generally, math variables) in true CM italic.
+  The bundled NCM-Book face has no italic glyphs; the matching GFL `NewCM10-BookItalic.otf` is
+  available locally. Needs mixed-font text: a **second glyph atlas channel** in the `Overlay` +
+  renderer (the overlay is single-atlas today, ADR-0023/0025), so roman structure (`|`, `arg`,
+  `(`, `)`, ticks, numbers) and the italic field name can coexist in one overlay.
+- **Why deferred:** an architectural change (second atlas + a bundled font asset) out of scope
+  for the field-name feature; the field name renders **upright** meanwhile (D-0047).
+- **Revisit when:** the legend visual-polish pass (or when units / LaTeX-ish math labels want
+  mixed fonts).
+- **Contract link:** would extend ADR-0023/0025 (glyph overlay) + amend D-0035 (bundle
+  BookItalic); no `LegendSpec`/`PlotOptions` API change (upright → italic is rendering-only).

@@ -1016,6 +1016,9 @@ the same day. Future entries prepend above.)
   position/size), the **placement of its labels** (the `|·|` / `arg(·)` captions, the −π/0/π
   phase labels, the magnitude tick values, the `L` label), and **various label sizes** across the
   plot (title, axis labels, tick labels, legend). Pure presentation.
+- **Observed (M9 eyeballing, 2026-06-21):** axis **labels overlap the tick-value numbers** (e.g.
+  "y (nm)" sitting over "0.0") — the outward label offset (`kAxisLabelMargin`, ADR-0026) wants
+  tuning, more so now that math labels can be wider/taller. A concrete first target for the pass.
 - **Why deferred:** appearance refinement, batched into the polish pass; no contract impact.
 - **Revisit when:** the next session (the visual-polish pass).
 - **Contract link:** none (presentation; ADR-0026 annotation constants + ADR-0028 legend

@@ -37,7 +37,7 @@ Decisions D-0001…D-0048; Backlog **open:** B-0005 (more colormaps), B-0006 (VM
 (LICENSE), B-0013 (legend/label visual polish — axis labels overlap tick numbers), B-0014 (legend
 `L` in data units), B-0016 (legend sci-notation); B-0007/0008/0010/0011/0012/0015 resolved. ADR
 index current (**ADR-0001…0033 Accepted**; 0009 superseded by 0015). Gates: full suite
-**1313/100**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
+**1323/100**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
 text-free (transfer core, no HarfBuzz) builds; no HarfBuzz type in any public header; `iv_view`
 (via makePlot) present-path validation-CLEAN.
 
@@ -48,7 +48,7 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** M9 is closed; the tree is clean at the M9 commits. Full suite **1313/100**;
+**Nothing in flight.** M9 is closed; the tree is clean at the M9 commits. Full suite **1323/100**;
 ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN.
 
 ## Next Action
@@ -97,10 +97,10 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   uncorrected). The viewer drives `L` via the **render-inert** `RenderParams::legendThickness` +
   `[`/`]` (a `[vk][renderer]` test pins that the ray-march ignores it). The thickness label uses
   plain **`L`** — NCM-Book lacks U+2113 `ℓ` (a `[legend]` test pins this; don't restore `ℓ`).
-  Captions derive from `LegendSpec::fieldName` (default `"f"` → `|f|` / `arg(f)`, via
-  `magnitudeCaption()`/`phaseCaption()`; `magnitudeLabel`/`phaseLabel` override — ADR-0031),
-  rendered **upright**; true CM italic is deferred (**B-0012** — needs mixed-font/multi-atlas
-  glyphs; NCM-Book has no italic).
+  Captions derive from `LegendSpec::fieldName` (default now **`"$f$"`** → `|𝑓|` / `arg(𝑓)`, via
+  `magnitudeCaption()`/`phaseCaption()`; `magnitudeLabel`/`phaseLabel` override — ADR-0031) and,
+  like every label, may carry inline `$…$` math, typeset by the M9 math layer (ADR-0033;
+  **B-0012 resolved** — the italic + NewCMMath faces are bundled). See the "Inline math" landmine.
 - **Facade targets / isolation** (ADR-0029): `renderPlot` is in **`iv_text`** (needs text,
   not GLFW); `makePlot` is in **`iv_plot`** (gated on `IV_BUILD_VIEWER AND IV_BUILD_TEXT`).
   Core `iv` / tests / `iv_bench` still build with both gates OFF (the isolation gates). The

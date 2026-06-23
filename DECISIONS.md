@@ -1103,15 +1103,21 @@ the same day. Future entries prepend above.)
 - **Observed (M9 eyeballing, 2026-06-21):** axis **labels overlap the tick-value numbers** (e.g.
   "y (nm)" sitting over "0.0") — the outward label offset (`kAxisLabelMargin`, ADR-0026) wants
   tuning, more so now that math labels can be wider/taller. A concrete first target for the pass.
-- **Partially resolved (2026-06-22, D-0049):** the axis-label/tick-number **overlap** is fixed
-  (orientation-adaptive `axisLabelOutwardPx`) and the cube is now **framed with a margin** (facade
-  distance 3.3) so wide labels are no longer clipped at the frame edge. **Still open:** legend panel
-  placement (`LegendSpec::rectNdc`), legend caption / −π·0·π phase-label / magnitude-tick / `L`
-  positions, and the relative **label sizes** across the plot (title/axis/tick/legend).
-- **Why deferred:** appearance refinement, batched into the polish pass; no contract impact.
-- **Revisit when:** continuing the visual-polish pass (legend placement & sizes next).
-- **Contract link:** none (presentation; ADR-0026 annotation constants + ADR-0028 legend
-  constants — journaled refinements, not contract changes).
+- **RESOLVED (2026-06-22)** across the visual-polish pass — no reversal of a governed decision (the
+  binding pieces are ADR-0034/0035; the rest are journaled presentation tuning), so no superseding
+  ADR (§2.8). What was done:
+  - **Axis-label overlap + framing (D-0049):** orientation-adaptive `axisLabelOutwardPx` clears the
+    tick band; the cube is framed with a label margin (facade distance 3.3).
+  - **Legend placement + compact caption (ADR-0034/D-0050):** `placeLegendRight` (aspect-aware,
+    clears the box); the `|f|` magnitude caption rotated −π/2 to the left of the swatch.
+  - **Plot-left / legend-right framing (ADR-0035/D-0051):** the camera image shift puts the plot in
+    the left 75%, the legend in the right 25% — the actual overlap fix.
+  - **Title spacing:** tucked just above the box top (`kTitleGapPx`), centered over the plot.
+  - **Label sizes:** legend caption-class labels (phase −π/0/π, captions, `L`) at ~axis-label size
+    (`kLegendLabelScale = 1.3`); the magnitude value ticks kept at the volume tick size (`baseSize`).
+  - Further fine balance tuning is possible but not required (the maintainer moved on).
+- **Contract link:** ADR-0034 (amends ADR-0028/0031), ADR-0035 (amends ADR-0012); the rest journaled
+  presentation (ADR-0026 annotation constants + ADR-0028 legend constants), no contract change.
 
 ### B-0014 — Display the legend thickness `L` in the data's physical units
 - **Origin:** maintainer review, 2026-06-20.

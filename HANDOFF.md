@@ -6,10 +6,11 @@
 milestone, if any, starts at ORIENT → CONTRACT). M9 delivered inline LaTeX-subset math in labels
 via an owned subset parser + OpenType-MATH box layout over `hb_ot_math_*` (no TeX engine; D-0048):
 **ADR-0032 (mixed-font substrate)** + **ADR-0033 (inline `$…$` math)**, both Accepted. **Latest
-work (2026-06-22):** three B-0013 polish items — (D-0049) axis labels no longer overlap the
-tick-value numbers + plots framed with a label margin; (**ADR-0034**/D-0050) the legend is placed
-aspect-aware with a compact rotated magnitude caption; (**ADR-0035**/D-0051) the plot is framed into
-the left 75% via a camera image shift so the legend has the right 25% — no more box/legend overlap.
+work (2026-06-22): B-0013 (legend/label visual polish) COMPLETE** — axis labels no longer overlap
+the tick numbers + label margin (D-0049); legend placed aspect-aware with a compact rotated
+magnitude caption (**ADR-0034**/D-0050); plot framed into the left 75% via a camera image shift so
+the legend has the right 25%, no more overlap (**ADR-0035**/D-0051); title tucked above the box; and
+legend label sizes balanced (caption-class ~axis size, value ticks at the volume tick size).
 
 ## Current State
 The library does the full job end to end: ingest a complex field (`std::complex<float|
@@ -37,10 +38,9 @@ CHANGELOG.md).
   ADR-0031). Resolves **B-0015**; follow-on B-0016 (legend sci-notation).
 
 Decisions D-0001…D-0051; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
-(LICENSE), B-0013 (legend/label visual polish — **axis-label overlap+framing (D-0049), legend
-placement+rotated caption (ADR-0034/D-0050), AND plot-left/legend-right framing (ADR-0035/D-0051)
-now done**; relative label sizes still open), B-0014 (legend `L` in data units), B-0016 (legend
-sci-notation); B-0007/0008/0010/0011/0012/0015 resolved. ADR index current (**ADR-0001…0035
+(LICENSE), B-0014 (legend `L` in data units), B-0016 (legend sci-notation);
+B-0007/0008/0010/0011/0012/**0013**/0015 resolved (**B-0013 visual polish complete** —
+D-0049/ADR-0034/ADR-0035 + journaled sizing). ADR index current (**ADR-0001…0035
 Accepted**; 0009 superseded by 0015; 0034 amends 0028/0031; 0035 amends 0012). Gates: full suite
 **1410/106**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
 text-free (transfer core, no HarfBuzz) builds; no HarfBuzz type in any public header; `iv_view`
@@ -53,22 +53,23 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** Three B-0013 items done (D-0049 axis labels, ADR-0034/D-0050 legend
-placement+caption, ADR-0035/D-0051 plot-left framing, + the title tucked to the box top); the tree
-is clean. Full suite **1410/106**;
-ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN.
+**Nothing in flight.** **B-0013 (legend/label visual polish) is RESOLVED** — axis-label overlap +
+framing (D-0049), legend placement + rotated caption (ADR-0034/D-0050), plot-left/legend-right
+framing (ADR-0035/D-0051), title tucked above the box, and label sizes (legend caption-class at
+~axis size `kLegendLabelScale=1.3`; magnitude value ticks at the volume tick size). Tree clean. Full
+suite **1410/106**; ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path
+validation-CLEAN.
 
 ## Next Action
-Continue the deferred visual-polish backlog (no math left). The overlap, legend placement/caption,
-and the plot-left/legend-right framing are done — remaining, in suggested order:
-- **B-0013 (rest)** label **sizes/spacing** fine-tuning — the title now tucks above the box
-  (`kTitleGapPx`) and legend labels render at ~axis-label size (`kLegendLabelScale = 1.3`); remaining
-  is any further balance tuning across title/axis/tick. Pure presentation; journaled, no ADR.
+Visual polish (B-0013) is done. The maintainer plans to resume on these backlog items tomorrow:
 - **B-0016** legend magnitude-axis **scientific notation** (`1×10⁻³`) — unblocked: reuse the M9
-  math layout to typeset the generated mantissa×10^exp (a `legend_builder` change). The new
-  `appendLabelRotated` could also rotate the value-label column if wanted.
-- **B-0014** legend `L` in data units (short ADR); **B-0005** more colormaps (extends ADR-0014);
-  **B-0009** project LICENSE.
+  math layout to typeset the generated mantissa×10^exp (a `legend_builder` change; likely no ADR —
+  presentation, but confirm). The new `appendLabelRotated` could also rotate the value-label column.
+- **B-0014** legend thickness `L` shown in the **data's physical units** — needs a short ADR
+  (CONTRACT step) before implementing (it changes what the `L` label means).
+- **B-0005** more **colormaps** beyond twilight/HSV — extends ADR-0014; needs an ADR amendment.
+- **B-0009** declare a top-level project **LICENSE** (administrative; see VENDORING.md for the
+  third-party license set — HarfBuzz/Slug, the GFL NewCM fonts).
 To eyeball: build `renderPlot` into a tiny driver (the scratch pattern: link `iv_text`, call
 `iv::renderPlot` with labeled `PlotOptions.axes`, write a PNG via `examples/png.hpp` — render at a
 TALL aspect, e.g. 600×1000, to exercise legend placement), or `DISPLAY=:1 ./build/debug/iv_view

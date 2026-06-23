@@ -35,6 +35,7 @@ constexpr float kTickLabelMargin = 30.0f; // px outward from the tick (clears th
 constexpr float kAxisLabelGap = 12.0f;    // px gap between the tick-label band and the axis label
 constexpr float kAxisLabelScale = 1.3f;   // axis labels, relative to tick labels
 constexpr float kTitleScale = 1.5f;       // plot title, relative to tick labels
+constexpr float kTitleGapPx = 10.0f;      // gap between the title's underside and the box top
 constexpr float kLabelCapHalf = 0.35f;    // half the cap height as a fraction of pixel size:
                                           // both the cap-centering nudge and a label's box height
 
@@ -315,13 +316,23 @@ void buildAnnotations(Overlay& ov, MixedGlyphs& g, const PlotAxes& axes,
         }
     }
 
-    // --- Title: screen top, centered over the PLOT, the largest label. The title is not
-    //     projected, so it carries the ADR-0035 image shift itself to stay centered over the
-    //     (possibly left-shifted) plot rather than the whole frame. ---
+    // --- Title: centered over the PLOT, tucked just above the box top. The title is not projected,
+    //     so it carries the ADR-0035 image shift itself to stay centered over the (possibly
+    //     left-shifted) plot; its vertical position tracks the box's projected top so it sits close
+    //     to the bounding box rather than floating in the empty space below the frame top. ---
     if (axes.showTitle && !axes.title.empty()) {
         const float titleSize = baseSize * kTitleScale;
         const float titleCx = static_cast<float>(fbW) * 0.5f * (1.0f + camera.imageShiftNdcX);
-        addCenteredLabel(ov, g, axes.title, titleCx, titleSize, fbW, fbH, titleSize);
+        float boxTopPx = static_cast<float>(fbH);
+        for (int i = 0; i < 8; ++i) {
+            const auto cp = iv::vk::projectToPixel(M, cubeCorner(i), fbW, fbH);
+            if (cp[2] > 0.0f) {
+                boxTopPx = std::min(boxTopPx, cp[1]);
+            }
+        }
+        // Center the title half its height + a gap above the box top; never above the frame margin.
+        const float titleCy = std::max(boxTopPx - 0.5f * titleSize - kTitleGapPx, titleSize);
+        addCenteredLabel(ov, g, axes.title, titleCx, titleCy, fbW, fbH, titleSize);
     }
 }
 

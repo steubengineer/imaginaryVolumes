@@ -254,6 +254,58 @@ TEST_CASE("axis label offset clears the tick-label band (B-0013)", "[annot]") {
     CHECK(bare == Catch::Approx(tickMargin + gap + axisHalfH));
 }
 
+// B-0013 (presentation): the title is tucked just above the box's projected top, not pinned to the
+// frame top — so it sits close to the bounding box instead of floating over the empty space the
+// legend framing (ADR-0035 zoom-out) opens above it. teeth: pinning the title at the frame top
+// leaves its glyphs far above the box top → the "close to the box top" bound fails.
+TEST_CASE("the title tucks just above the box top, not the frame top (B-0013)", "[annot]") {
+    auto fonts = FontSet::create(18.0f);
+    REQUIRE(fonts);
+    const std::uint32_t W = 512;
+    const std::uint32_t H = 512;
+    // A zoomed-out 3/4 view: the box does not fill the frame, so its top sits well below the top.
+    iv::vk::RenderParams cam;
+    cam.eye = {3.4f, 2.6f, 3.0f};
+    cam.target = {0.5f, 0.5f, 0.5f};
+    cam.up = {0.0f, 1.0f, 0.0f};
+    cam.vfovRadians = 0.6f;
+
+    PlotAxes a;
+    a.title = "Title";
+    a.boundingBox = false; // no box/tick LINES, and no tick/axis LABELS -> only the title glyphs
+    a.boxTicks = false;    // (the title's tuck-to-box still projects the cube corners)
+    a.tickLabels = false;
+    a.axisLabels = false;
+    iv::vk::Overlay ov;
+    annotate(ov, a, cam, W, H, *fonts);
+    REQUIRE_FALSE(ov.glyphs.empty()); // the title
+
+    // The box's projected top (min pixel y over the in-front cube corners).
+    const auto M = iv::vk::viewProjection(cam, 1.0f);
+    float boxTopPx = static_cast<float>(H);
+    for (int i = 0; i < 8; ++i) {
+        const std::array<float, 3> c{static_cast<float>(i & 1), static_cast<float>((i >> 1) & 1),
+                                     static_cast<float>((i >> 2) & 1)};
+        const auto px = iv::vk::projectToPixel(M, c, W, H);
+        if (px[2] > 0.0f) {
+            boxTopPx = std::min(boxTopPx, px[1]);
+        }
+    }
+    REQUIRE(boxTopPx > 0.15f * static_cast<float>(H)); // sanity: box top is well below the frame top
+
+    float maxGlyphY = 0.0f;
+    float minGlyphY = static_cast<float>(H);
+    for (const auto& g : ov.glyphs) {
+        const float py = (g.pos[1] * 0.5f + 0.5f) * static_cast<float>(H);
+        maxGlyphY = std::max(maxGlyphY, py);
+        minGlyphY = std::min(minGlyphY, py);
+    }
+    const float titleSize = 18.0f * 1.5f; // baseSize * kTitleScale
+    CHECK(maxGlyphY < boxTopPx);                       // the title sits above the box top
+    CHECK(boxTopPx - maxGlyphY < titleSize + 24.0f);   // ...and CLOSE (teeth: pinned-to-top is far)
+    CHECK(minGlyphY > 0.15f * static_cast<float>(H));  // not floating at the frame top
+}
+
 // ADR-0026 end-to-end: the annotated overlay renders over the volume (headless). An
 // empty (background) volume + full annotations paints box/line pixels and white label
 // ink, validation-clean. teeth: the line + glyph draws are guarded by ADR-0021/0023.

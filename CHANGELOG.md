@@ -4,6 +4,20 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M9 — Visual polish: tuck the title to the box top (B-0013)
+
+Maintainer follow-up to ADR-0035: the title was pinned near the frame top, so the legend framing's
+zoom-out (distance 4.0) opened excessive empty space between it and the bounding box. The title now
+**tucks just above the box's projected top** — `buildAnnotations` takes the min projected-y over the
+in-front cube corners and centers the title half its height + a small gap above it (clamped to the
+frame top margin so it never runs off-screen when the box fills the frame). Still centered over the
+plot (it carries the ADR-0035 image shift). Pure presentation; no ADR.
+
+**Teeth:** new `[annot]` test — with a zoomed-out camera (box well below the frame top), the title's
+glyphs sit just above the box top (within ~one title height), not at the frame top. **Fault
+injection demonstrated** — pinning the title to the frame top leaves its glyphs far above the box
+top → red; restored to green. Full suite **1411/106**; ASan+UBSan **2/2**; `iv_view` validation-CLEAN.
+
 ## Post-M9 — Visual polish: frame the plot left for the legend (B-0013, ADR-0035)
 
 Follow-up to ADR-0034 (D-0051; **ADR-0035**, amends the ADR-0012 camera). ADR-0034 placed the legend

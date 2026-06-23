@@ -42,7 +42,7 @@ placement+rotated caption (ADR-0034/D-0050), AND plot-left/legend-right framing 
 now done**; relative label sizes still open), B-0014 (legend `L` in data units), B-0016 (legend
 sci-notation); B-0007/0008/0010/0011/0012/0015 resolved. ADR index current (**ADR-0001…0035
 Accepted**; 0009 superseded by 0015; 0034 amends 0028/0031; 0035 amends 0012). Gates: full suite
-**1405/105**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
+**1411/106**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
 text-free (transfer core, no HarfBuzz) builds; no HarfBuzz type in any public header; `iv_view`
 (via makePlot) present-path validation-CLEAN.
 
@@ -54,7 +54,8 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 
 ## In Flight (work started, not finished)
 **Nothing in flight.** Three B-0013 items done (D-0049 axis labels, ADR-0034/D-0050 legend
-placement+caption, ADR-0035/D-0051 plot-left framing); the tree is clean. Full suite **1405/105**;
+placement+caption, ADR-0035/D-0051 plot-left framing, + the title tucked to the box top); the tree
+is clean. Full suite **1411/106**;
 ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN.
 
 ## Next Action
@@ -131,7 +132,10 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   test guards it). For makePlot, the OrbitCamera sets eye/target/up each frame but leaves
   `imageShiftNdcX`, so it's set ONCE and persists across orbit. The non-projected **title** carries
   the shift itself (`buildAnnotations`: `cx = fbW·0.5·(1+imageShiftNdcX)`) to stay over the plot;
-  projected labels (ticks/axis) shift automatically via `viewProjection`.
+  projected labels (ticks/axis) shift automatically via `viewProjection`. The title's **vertical**
+  position tracks the box too: it tucks just above the box's projected top (min projected-y over the
+  cube corners) − `0.5·titleSize − kTitleGapPx`, clamped to the frame top margin — so it sits close
+  to the box instead of floating in the zoom-out gap (a `[annot]` test pins this).
 - **Facade targets / isolation** (ADR-0029): `renderPlot` is in **`iv_text`** (needs text,
   not GLFW); `makePlot` is in **`iv_plot`** (gated on `IV_BUILD_VIEWER AND IV_BUILD_TEXT`).
   Core `iv` / tests / `iv_bench` still build with both gates OFF (the isolation gates). The

@@ -121,10 +121,11 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   never moves left of the incoming default, and clamps so the right value labels stay on screen
   (extreme portrait keeps the default + accepts residual overlap). The **magnitude** caption is drawn
   rotated −π/2, vertically centered LEFT of the swatch (`appendLabelRotated`), NOT centered above; the
-  phase caption / ticks / value labels / `L` are unchanged. **All** legend labels render at
-  `labelSize = baseSize · kLegendLabelScale` (1.3, ~the plot's axis-label size), not the tick
-  `baseSize`; the `centeredLabel`/`leftLabel` helpers take an explicit size and the vertical label
-  spacing is in `labelSize` units. The `placeLegendRight` px tunables
+  phase caption / ticks / value labels / `L` are unchanged. **The legend's
+  caption-class labels (−π/0/π phase labels, captions, `L`) render at `labelSize = baseSize ·
+  kLegendLabelScale` (1.3, ~the plot's axis-label size); the **magnitude value ticks** (numbers on the
+  swatch's vertical axis) stay at `baseSize` (= the volume's axis tick values). `centeredLabel`/
+  `leftLabel` take an explicit size; the vertical label spacing is in `labelSize` units. The `placeLegendRight` px tunables
   (`kBoxGapPx`/`kCapAllowPx`/`kValAllowPx`/`kRightEdgeNdc`) live in legend_builder.cpp.
   **Plot-left framing (ADR-0035, D-0051):** when a legend is shown the facade frames the plot into
   the LEFT 75% via `RenderParams::imageShiftNdcX = −0.25` + a larger distance (`kPlotFrameDistance

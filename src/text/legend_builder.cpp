@@ -160,7 +160,10 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
         }
         const float y = yBot + (yTop - yBot) * pos;
         sline(ov, xR, y, xR + kTickLenNdc, y, kBorderColor);
-        leftLabel(ov, g, label, pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y), fbW, fbH, labelSize);
+        // The magnitude value ticks read at the volume's TICK size (baseSize), not the enlarged
+        // legend labelSize — matching the plot's axis tick values. The -pi/0/pi phase labels and the
+        // captions/L stay at labelSize.
+        leftLabel(ov, g, label, pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y), fbW, fbH, baseSize);
     };
     const double maxM = static_cast<double>(spec.range.max);
     if (spec.opacityMode == 0u) { // linear: nice numbers over [0, max]

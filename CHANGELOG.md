@@ -7,12 +7,13 @@ tests. Newest milestone first.
 ## Post-M9 — Visual polish: legend label size + title spacing (B-0013)
 
 Two maintainer presentation tweaks (no contract; pure constants/plumbing):
-- **Legend labels enlarged to ~the plot's axis-label size.** `buildLegend` now renders every legend
-  label — the magnitude value ticks, the −π/0/π phase labels, both captions, and the `L` label — at
+- **Legend labels enlarged to ~the plot's axis-label size.** `buildLegend` renders the legend's
+  caption-class labels — the −π/0/π phase labels, both captions, and the `L` label — at
   `labelSize = baseSize · kLegendLabelScale` (1.3, matching the main plot's `kAxisLabelScale`) instead
   of the tick-label `baseSize`; the inter-label vertical spacing scales with it. `centeredLabel`/
-  `leftLabel` now take an explicit size. (The legend sits in its own right-25% panel — ADR-0035 — so
-  the larger labels have room; placement allowances unchanged.)
+  `leftLabel` now take an explicit size. The **magnitude value ticks** (the numbers on the swatch's
+  vertical axis) stay at `baseSize`, matching the volume's axis tick values. (The legend sits in its
+  own right-25% panel — ADR-0035 — so the larger labels have room; placement allowances unchanged.)
 - **A touch more title breathing room:** `kTitleGapPx` 10 → 26 px so the title sits a small, even gap
   above the bounding box (the tuck behavior from the previous entry is unchanged).
 

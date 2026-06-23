@@ -4,6 +4,35 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M9 — Visual polish: frame the plot left for the legend (B-0013, ADR-0035)
+
+Follow-up to ADR-0034 (D-0051; **ADR-0035**, amends the ADR-0012 camera). ADR-0034 placed the legend
+correctly but at the D-0049 framing the box fills the frame (right edge at NDC-x ≈ 0.79) — there was
+nowhere on the right for the legend, so `makePlot`/`iv_view` still overlapped the swatch (the
+`renderPlot` eyeball missed it: that angle put the box's widest point at a corner; the OrbitCamera
+angle centers it). Fix: reserve space by shifting the plot left, **75% plot / 25% legend**.
+
+- **`RenderParams::imageShiftNdcX`** (default 0, render-inert) — a horizontal image shift in NDC,
+  applied *identically* to the ray camera (`fillUbo`: `topLeft −= shift·halfW·u`) and the overlay
+  (`viewProjection`: `row0 += shift·row3`), so the volume, world-space box/axes, and label anchoring
+  all move together and the ADR-0012 ray↔overlay collinearity holds at any shift. No shader/UBO
+  change (folded into the host-computed `topLeft`).
+- **Facade:** with a legend, `imageShiftNdcX = −0.25` (centers the plot in the left 75%) + a larger
+  framing distance (4.0) so the box and its left axis labels fit there without clipping; the
+  non-projected title carries the same shift to stay centered over the plot. `placeLegendRight`
+  (ADR-0034) is unchanged — it projects the shifted box and keeps the legend in the freed right 25%.
+  No legend → shift 0, distance 3.3 (unchanged D-0049).
+
+**Teeth:** new `[viewproj]` test — with `imageShiftNdcX = −0.25` the shifted ray reconstruction
+(the `fillUbo` `+shiftU·u` term) stays collinear with the shifted `viewProjection`, the cube center
+lands at `ndc_x = shift` (pixel `(1+shift)/2·W`), and shift 0 reproduces the centered projection.
+**Fault injection demonstrated** — dropping the shift from `viewProjection` only (ray keeps it)
+breaks collinearity → red; restored to green. `test_plot`'s "legend matches render" volume sample
+made framing-robust (scans the left region for the cube's cyan). Verified end-to-end: the headless
+`makePlot`-angle render shows the plot in the left 75% and the legend cleanly in the right 25%, no
+overlap; `iv_view` runs validation-CLEAN. Full suite **1405/105**; ASan+UBSan **2/2**; GLFW-free +
+text-free isolation builds OK. **Still open (B-0013):** relative label sizes across the plot.
+
 ## Post-M9 — Visual polish: legend placement & rotated caption (B-0013, ADR-0034)
 
 Second item of the visual-polish pass (D-0050; **ADR-0034**, which amends ADR-0028 §(3) / ADR-0031

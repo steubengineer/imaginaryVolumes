@@ -90,10 +90,22 @@ TEST_CASE("renderPlot: the legend matches the render (single-source transfer)", 
     const auto py = [&](float ny) {
         return static_cast<std::uint32_t>((ny + 1.0f) * 0.5f * static_cast<float>(H));
     };
+    const auto isCyan = [](const auto& p) { return p.r < 45 && p.g > 200 && p.b > 200; };
+
     // Legend swatch at phase 0 (u=0.5 -> x = mid of the default rect [0.60,0.84] = 0.72), near
-    // the top (opaque); and a volume pixel clear of the right-side legend panel.
+    // the top (opaque).
     const auto legendPx = img->at(px(0.72f), py(-0.40f));
-    const auto volPx = img->at(px(-0.30f), py(0.0f));
+
+    // A volume pixel: the uniform phase-0 cube reads HSV cyan. The facade frames the plot into the
+    // left ~75% (ADR-0035 image shift), so scan the left half along the vertical center and take the
+    // most-cyan pixel (robust to the exact framing; avoids box-edge/anti-aliased samples).
+    iv::vk::ImageReadback::Rgba volPx{255, 0, 0, 255};
+    for (std::uint32_t x = px(-0.85f); x <= px(0.10f); ++x) {
+        const auto c = img->at(x, py(0.0f));
+        if (c.g > 200 && c.b > 200 && c.r < volPx.r) {
+            volPx = c; // the least-red cyan along the row
+        }
+    }
 
     // Both the legend swatch (phase-0 column) and the volume (uniform phase 0) read as HSV cyan
     // (R~0, high G, high B) under the SAME options -> the legend matches the render. A wrong
@@ -102,7 +114,6 @@ TEST_CASE("renderPlot: the legend matches the render (single-source transfer)", 
     // where HSV green is ~0.93 not 1.0 — the legend faithfully shows that column's color.)
     CAPTURE(static_cast<int>(legendPx.r), static_cast<int>(legendPx.g), static_cast<int>(legendPx.b),
             static_cast<int>(volPx.r), static_cast<int>(volPx.g), static_cast<int>(volPx.b));
-    const auto isCyan = [](const auto& p) { return p.r < 45 && p.g > 200 && p.b > 200; };
     CHECK(isCyan(legendPx));
     CHECK(isCyan(volPx));
 }

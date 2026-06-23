@@ -31,6 +31,11 @@ struct RenderParams {
     std::array<float, 3> target{0.5f, 0.5f, 0.5f};
     std::array<float, 3> up{0.0f, 1.0f, 0.0f};
     float vfovRadians{0.6f};
+    // Horizontal image shift in clip/NDC units (ADR-0035): translates the rendered image
+    // (negative = left), applied identically to the ray camera and the overlay view-projection so
+    // they stay in lock-step. 0 (default) = no shift (render-inert). The facade sets it to reserve
+    // the right of the frame for the legend.
+    float imageShiftNdcX{0.0f};
     // Compositing (ADR-0012).
     std::uint32_t stepCount{256};
     float alphaTermination{0.995f};

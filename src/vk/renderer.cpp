@@ -73,7 +73,10 @@ Ubo fillUbo(const RenderParams& params, std::uint32_t width, std::uint32_t heigh
 
     Ubo data{};
     writeV3(data.eye, eye);
-    writeV3(data.topLeft, u * (-halfW) + v * halfH - w);
+    // ADR-0035 horizontal image shift: offset every ray's u-component by -shift*halfW so a world
+    // point that rendered at screen NDC-x X now renders at X + shift (matches viewProjection).
+    const float shiftU = -params.imageShiftNdcX * halfW;
+    writeV3(data.topLeft, u * (-halfW + shiftU) + v * halfH - w);
     writeV3(data.horizontal, u * (2.0f * halfW));
     writeV3(data.vertical, v * (2.0f * halfH));
     data.background[0] = params.background[0];

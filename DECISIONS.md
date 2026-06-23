@@ -10,6 +10,33 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0051 — Horizontal image shift: frame the plot left, legend right (75/25) (B-0013)
+- **Date / milestone:** 2026-06-22 / post-M9 (visual-polish pass) — maintainer-approved (ADR-0035)
+- **Choice:** ADR-0034's `placeLegendRight` could not actually clear the box: at the D-0049 framing
+  (cube at distance 3.3 filling ~75% of the frame) the box's right edge projects to NDC-x ≈ 0.79,
+  past where the legend can sit, so `makePlot`/`iv_view` still overlapped the swatch (the renderPlot
+  eyeball missed it because that angle put the box's widest point at a corner; the OrbitCamera angle
+  centers it). The framing must reserve space. Options: shift the plot left (reserve the right for
+  the legend); symmetric zoom-out (centered, empty left margin); shrink the legend.
+- **Decision (ADR-0035):** **shift the plot left, 75/25 plot/legend split** (maintainer choice —
+  compact for publication, clear for readability). Add `RenderParams::imageShiftNdcX` (default 0,
+  render-inert) applied identically to the ray camera (`fillUbo`: `topLeft −= shift·halfW·u`) and the
+  overlay (`viewProjection`: `row0 += shift·row3`), so the ADR-0012 ray↔overlay collinearity holds at
+  any shift. The facade sets `imageShiftNdcX = −0.25` (centers the plot in the left 75%) + a larger
+  framing distance (`kPlotFrameDistanceLegend = 4.0`) when a legend is shown, so the box and its left
+  labels fit the left 75% without clipping; the (non-projected) title carries the same shift to stay
+  centered over the plot. `placeLegendRight` is unchanged — it projects the now-shifted (smaller) box
+  and keeps the legend in the freed right 25%.
+- **Rationale:** Only reserving space fixes the overlap; a fixed legend rect can't (ADR-0034 placed
+  it correctly but there was nowhere to go). Shifting (vs symmetric zoom-out) keeps the figure
+  balanced; folding the shift into the host-computed `topLeft` needs no shader/UBO change and keeps
+  the ray↔overlay derivation consistent.
+- **Contract impact:** **ADR-0035** (Accepted 2026-06-22; amends the ADR-0012 camera — adds the
+  render-inert image shift; supersedes neither). New `RenderParams::imageShiftNdcX`. The split (0.75)
+  and legend-case distance are presentation constants (journaled, tunable).
+- **Deferred alternatives:** symmetric zoom-out; shrink-the-legend; vertical shift / asymmetric
+  frustum (addable the same way if ever needed).
+
 ### D-0050 — Legend layout v2: aspect-aware placement + compact rotated magnitude caption (B-0013)
 - **Date / milestone:** 2026-06-22 / post-M9 (visual-polish pass) — maintainer-approved (ADR-0034)
 - **Choice:** Two B-0013 legend defects. (1) The fixed `LegendSpec::rectNdc` (screen NDC,

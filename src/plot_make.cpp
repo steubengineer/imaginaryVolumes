@@ -22,11 +22,13 @@ namespace iv {
 
 namespace {
 
-// Initial orbit distance that frames the unit cube with a margin for axis labels (B-0013).
-// Facade-local; kept in step with renderPlot's kPlotFrameDistance (plot_render.cpp) so the
-// interactive and headless plots frame identically. (Reset/`R` returns to the OrbitCamera
-// default, ADR-0018.)
+// Initial orbit distance that frames the unit cube with a margin for axis labels (B-0013), and,
+// when a legend is shown, the larger distance + image shift that puts the plot in the left 75% with
+// the legend in the right 25% (ADR-0035). Facade-local; kept in step with renderPlot
+// (plot_render.cpp). (Reset/`R` returns to the OrbitCamera default, ADR-0018.)
 constexpr float kPlotFrameDistance = 3.3f;
+constexpr float kPlotFrameDistanceLegend = 4.0f;
+constexpr float kLegendShiftNdcX = -0.25f; // = splitFrac − 1 = 0.75 − 1
 
 // Rendering state owned by the Viewer's onFrame closure, kept in a shared_ptr so the closure
 // stays copyable for std::function (a move-only captured Shaper would not). The transfer state
@@ -59,9 +61,13 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
     const iv::MagnitudeRange range = vol->magnitudeRange();
     viewer->setVolume(std::move(*vol));
 
-    viewer->camera().setDistance(kPlotFrameDistance); // frame with a label margin (B-0013)
+    // Frame with a label margin; with a legend, frame smaller + shift left so the legend has the
+    // right 25% (ADR-0035). The OrbitCamera sets eye/target/up each frame but leaves imageShiftNdcX,
+    // so setting it once persists across orbit/zoom.
+    viewer->camera().setDistance(options.showLegend ? kPlotFrameDistanceLegend : kPlotFrameDistance);
 
     iv::vk::RenderParams& p = viewer->params();
+    p.imageShiftNdcX = options.showLegend ? kLegendShiftNdcX : 0.0f;
     p.colormapMode = options.colormapMode;
     p.opacityMode = options.opacityMode;
     p.densityScale = options.densityScale;

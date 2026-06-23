@@ -315,11 +315,13 @@ void buildAnnotations(Overlay& ov, MixedGlyphs& g, const PlotAxes& axes,
         }
     }
 
-    // --- Title: screen top-center, the largest label ---
+    // --- Title: screen top, centered over the PLOT, the largest label. The title is not
+    //     projected, so it carries the ADR-0035 image shift itself to stay centered over the
+    //     (possibly left-shifted) plot rather than the whole frame. ---
     if (axes.showTitle && !axes.title.empty()) {
         const float titleSize = baseSize * kTitleScale;
-        addCenteredLabel(ov, g, axes.title, static_cast<float>(fbW) * 0.5f, titleSize, fbW, fbH,
-                         titleSize);
+        const float titleCx = static_cast<float>(fbW) * 0.5f * (1.0f + camera.imageShiftNdcX);
+        addCenteredLabel(ov, g, axes.title, titleCx, titleSize, fbW, fbH, titleSize);
     }
 }
 

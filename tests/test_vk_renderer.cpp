@@ -588,3 +588,58 @@ TEST_CASE("viewProjection matches the ADR-0012 ray camera", "[viewproj]") {
     CHECK(std::abs(centerPx[0] - static_cast<float>(W) * 0.5f) < 1.0f);
     CHECK(std::abs(centerPx[1] - static_cast<float>(H) * 0.5f) < 1.0f);
 }
+
+// ADR-0035: the horizontal image shift translates the rendered image by `imageShiftNdcX` (NDC),
+// applied identically to the overlay viewProjection and the ray camera so they stay collinear.
+// teeth: the shifted ray reconstruction (the fillUbo +shiftU*u term) stays collinear with the
+// shifted projection ONLY if both carry the same shift — dropping it from viewProjection (or the
+// ray) breaks collinearity; and the cube center lands at ndc_x = shift, not 0.
+TEST_CASE("viewProjection honors the ADR-0035 image shift, consistent with the ray", "[viewproj]") {
+    RenderParams cam;
+    cam.eye = {2.4f, 1.7f, 2.1f};
+    cam.target = {0.5f, 0.5f, 0.5f};
+    cam.up = {0.0f, 1.0f, 0.0f};
+    cam.vfovRadians = 0.7f;
+    cam.imageShiftNdcX = -0.25f; // shift the image left (plot in the left 75%)
+    const std::uint32_t W = 320;
+    const std::uint32_t H = 240;
+    const float aspect = static_cast<float>(W) / static_cast<float>(H);
+    const auto M = iv::vk::viewProjection(cam, aspect);
+
+    const Vec3 w = vnorm(vsub(cam.eye, cam.target));
+    const Vec3 u = vnorm(vcross(cam.up, w));
+    const Vec3 v = vcross(w, u);
+    const float halfH = std::tan(cam.vfovRadians * 0.5f);
+    const float halfW = aspect * halfH;
+    const float shiftU = -cam.imageShiftNdcX * halfW; // the fillUbo ray u-offset (ADR-0035)
+
+    const std::array<Vec3, 4> pts{
+        {{0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.2f, 0.8f, 0.4f}}};
+    for (const Vec3& p : pts) {
+        const auto px = iv::vk::projectToPixel(M, p, W, H);
+        REQUIRE(px[2] > 0.0f);
+        const float s = px[0] / static_cast<float>(W);
+        const float t = px[1] / static_cast<float>(H);
+        // The ADR-0035 ray adds shiftU*u to the unshifted ADR-0012 direction (matches fillUbo).
+        const Vec3 dir{
+            (2.0f * s - 1.0f) * halfW * u[0] + shiftU * u[0] + (1.0f - 2.0f * t) * halfH * v[0] - w[0],
+            (2.0f * s - 1.0f) * halfW * u[1] + shiftU * u[1] + (1.0f - 2.0f * t) * halfH * v[1] - w[1],
+            (2.0f * s - 1.0f) * halfW * u[2] + shiftU * u[2] + (1.0f - 2.0f * t) * halfH * v[2] - w[2]};
+        const Vec3 pe = vsub(p, cam.eye);
+        const Vec3 c = vcross(vnorm(pe), vnorm(dir));
+        CHECK(std::sqrt(vdot(c, c)) < 1e-3f); // P on the shifted ray => ray<->overlay agree
+    }
+
+    // The cube center now lands at ndc_x = imageShiftNdcX (= -0.25), i.e. pixel (1+shift)/2 * W.
+    const auto centerPx = iv::vk::projectToPixel(M, {0.5f, 0.5f, 0.5f}, W, H);
+    const float expectX = (1.0f + cam.imageShiftNdcX) * 0.5f * static_cast<float>(W);
+    CHECK(std::abs(centerPx[0] - expectX) < 1.0f);            // shifted left by a quarter-frame
+    CHECK(std::abs(centerPx[1] - static_cast<float>(H) * 0.5f) < 1.0f); // y unaffected
+
+    // Shift 0 reproduces the centered projection (render-inert default).
+    RenderParams cam0 = cam;
+    cam0.imageShiftNdcX = 0.0f;
+    const auto M0 = iv::vk::viewProjection(cam0, aspect);
+    const auto c0 = iv::vk::projectToPixel(M0, {0.5f, 0.5f, 0.5f}, W, H);
+    CHECK(std::abs(c0[0] - static_cast<float>(W) * 0.5f) < 1.0f);
+}

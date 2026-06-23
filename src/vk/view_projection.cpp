@@ -42,9 +42,13 @@ std::array<float, 16> viewProjection(const RenderParams& camera, float aspect) {
     //   clip.x =  dot(d,u)/halfW,  clip.y = -dot(d,v)/halfH,  clip.w = -dot(d,w),
     //   clip.z = 0.5*clip.w  (mid-range; the overlay pass has no depth buffer).
     // Row r (acting on (Px,Py,Pz,1)); stored column-major below.
-    const std::array<float, 4> row0{u[0] * invHW, u[1] * invHW, u[2] * invHW, -eu * invHW};
-    const std::array<float, 4> row1{-v[0] * invHH, -v[1] * invHH, -v[2] * invHH, ev * invHH};
     const std::array<float, 4> row3{-w[0], -w[1], -w[2], ew};
+    // ADR-0035 horizontal image shift: clip.x' = clip.x + shift*clip.w => ndc_x' = ndc_x + shift.
+    // Add shift*row3 (the clip.w row) to row0 (the clip.x row) — matches the fillUbo ray shift.
+    const float sh = camera.imageShiftNdcX;
+    const std::array<float, 4> row0{u[0] * invHW + sh * row3[0], u[1] * invHW + sh * row3[1],
+                                    u[2] * invHW + sh * row3[2], -eu * invHW + sh * row3[3]};
+    const std::array<float, 4> row1{-v[0] * invHH, -v[1] * invHH, -v[2] * invHH, ev * invHH};
     const std::array<float, 4> row2{0.5f * row3[0], 0.5f * row3[1], 0.5f * row3[2], 0.5f * row3[3]};
 
     // Column-major: out[col*4 + row] = M[row][col].

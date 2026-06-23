@@ -39,3 +39,4 @@
 | [ADR-0032](0032-mixed-font-glyph-substrate.md) | Mixed-Font Glyph Substrate (Multiple Faces per Overlay) | Accepted | — |
 | [ADR-0033](0033-inline-math-labels.md) | Inline Math in Labels — `$…$` Model, LaTeX Subset & OpenType-MATH Layout | Accepted | — |
 | [ADR-0034](0034-legend-placement-and-rotated-caption.md) | Legend Layout v2 — Aspect-Aware Placement & Compact Rotated Magnitude Caption | Accepted | — |
+| [ADR-0035](0035-horizontal-image-shift-for-legend.md) | Horizontal Image Shift — Frame the Plot Left to Make Room for the Legend | Accepted | — |

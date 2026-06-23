@@ -20,22 +20,26 @@ namespace iv {
 
 namespace {
 
-// Orbit distance at which the facade frames the unit cube, leaving a margin around the box so
-// wide axis labels are not clipped at the framebuffer edge (B-0013). Facade-local: it does not
-// change the global RenderParams/OrbitCamera defaults. Kept in step with makePlot's
-// kPlotFrameDistance (plot_make.cpp) so headless and interactive plots frame identically.
+// Orbit distances at which the facade frames the unit cube. Without a legend the cube fills ~75%
+// of the full frame (room for labels, B-0013/D-0049). With a legend (ADR-0035) the plot is shifted
+// into the left 75% and framed a touch smaller so the box AND its left axis labels fit there
+// without clipping; the legend takes the right 25%. Facade-local (no global default change); kept
+// in step with makePlot (plot_make.cpp).
 constexpr float kPlotFrameDistance = 3.3f;
+constexpr float kPlotFrameDistanceLegend = 4.0f;
+// Image shift (NDC, ADR-0035) that centers the plot in the left 75% of the frame: splitFrac − 1.
+constexpr float kLegendShiftNdcX = -0.25f; // = 0.75 − 1
 
-// Pull the camera back along its view direction to kPlotFrameDistance from the target, so the
-// cube fills ~75% of the frame (room for labels). Preserves the view angle and target.
-void frameUnitCube(iv::vk::RenderParams& p) {
+// Pull the camera back along its view direction to `distance` from the target. Preserves the view
+// angle and target.
+void frameUnitCube(iv::vk::RenderParams& p, float distance) {
     const std::array<float, 3> dir{p.eye[0] - p.target[0], p.eye[1] - p.target[1],
                                    p.eye[2] - p.target[2]};
     const float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
     if (len <= 0.0f) {
         return;
     }
-    const float s = kPlotFrameDistance / len;
+    const float s = distance / len;
     p.eye = {p.target[0] + dir[0] * s, p.target[1] + dir[1] * s, p.target[2] + dir[2] * s};
 }
 
@@ -89,7 +93,14 @@ Result<iv::vk::ImageReadback> renderPlotImpl(std::span<const std::complex<T>> fi
 
     iv::vk::RenderParams p;
     applyTransfer(p, options);
-    frameUnitCube(p); // leave a margin for axis labels (B-0013)
+    // Frame the plot: with a legend, shift it into the left 75% and frame a touch smaller so the
+    // legend has the right 25% (ADR-0035); otherwise fill the frame (B-0013/D-0049).
+    if (options.showLegend) {
+        p.imageShiftNdcX = kLegendShiftNdcX;
+        frameUnitCube(p, kPlotFrameDistanceLegend);
+    } else {
+        frameUnitCube(p, kPlotFrameDistance);
+    }
 
     // One mixed-font glyph builder spans the annotations + legend labels; finish() merges the
     // roman/italic/math atlases once (ADR-0032/0033). Labels may carry inline `$…$` math.

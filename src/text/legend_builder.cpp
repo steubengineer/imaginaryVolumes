@@ -32,6 +32,8 @@ constexpr float kTickLenNdc = 0.018f;
 constexpr float kPhaseLabelPadPx = 6.0f;
 constexpr float kMagLabelPadPx = 8.0f;
 constexpr float kMagCaptionPadPx = 10.0f; // gap between the rotated |f| caption and the swatch left
+constexpr float kLegendLabelScale = 1.3f; // legend labels relative to the tick size — ~the main
+                                          // plot's axis-label scale (annotations.cpp kAxisLabelScale)
 
 // placeLegendRight tunables (px; converted to NDC via halfW so gaps are aspect-consistent, ADR-0034).
 constexpr float kBoxGapPx = 18.0f;      // gap between the box's right extent and the caption
@@ -58,17 +60,15 @@ void squad(Overlay& ov, float xL, float yA, float xR, float yB, const Color& cLA
 }
 
 // Math-aware labels (ADR-0033): captions may carry inline `$…$` math (the field name is `$f$`).
-// Horizontally centered at pixel (cx), baseline at pixel (by), at the face set's size.
+// Horizontally centered at pixel (cx), baseline at pixel (by), at `size` px.
 void centeredLabel(Overlay& ov, MixedGlyphs& g, std::string_view s, float cx, float by,
-                   std::uint32_t fbW, std::uint32_t fbH) {
-    const float size = g.fonts().pixelSize();
+                   std::uint32_t fbW, std::uint32_t fbH, float size) {
     const float w = iv::text::math::measureLabel(g.fonts(), s, size);
     iv::text::math::appendLabel(g, ov, s, cx - 0.5f * w, by, fbW, fbH, size, kLabelColor);
 }
-// Left-aligned at pixel x, vertically centered on pixel (cy).
+// Left-aligned at pixel x, vertically centered on pixel (cy), at `size` px.
 void leftLabel(Overlay& ov, MixedGlyphs& g, std::string_view s, float x, float cy,
-               std::uint32_t fbW, std::uint32_t fbH) {
-    const float size = g.fonts().pixelSize();
+               std::uint32_t fbW, std::uint32_t fbH, float size) {
     iv::text::math::appendLabel(g, ov, s, x, cy + 0.34f * size, fbW, fbH, size, kLabelColor);
 }
 
@@ -85,6 +85,7 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
         return;
     }
     const float baseSize = g.fonts().pixelSize();
+    const float labelSize = baseSize * kLegendLabelScale; // legend text ~= the plot's axis labels
     const float xL = spec.rectNdc[0];
     const float yTop = spec.rectNdc[1];
     const float xR = spec.rectNdc[2];
@@ -137,11 +138,12 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
         const float x = xL + (xR - xL) * us[k];
         sline(ov, x, yBot, x, yBot + kTickLenNdc, kBorderColor); // y-down: +len draws downward
         centeredLabel(ov, g, plbl[k], pxX(x),
-                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + baseSize, fbW, fbH);
+                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + labelSize, fbW, fbH, labelSize);
     }
     if (const std::string ph = spec.phaseCaption(); !ph.empty()) {
         centeredLabel(ov, g, ph, pxX(0.5f * (xL + xR)),
-                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 2.4f * baseSize, fbW, fbH);
+                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 2.4f * labelSize, fbW, fbH,
+                      labelSize);
     }
 
     // (5) Magnitude ticks + value labels on the right edge, each placed at its normalized ramp
@@ -158,7 +160,7 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
         }
         const float y = yBot + (yTop - yBot) * pos;
         sline(ov, xR, y, xR + kTickLenNdc, y, kBorderColor);
-        leftLabel(ov, g, label, pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y), fbW, fbH);
+        leftLabel(ov, g, label, pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y), fbW, fbH, labelSize);
     };
     const double maxM = static_cast<double>(spec.range.max);
     if (spec.opacityMode == 0u) { // linear: nice numbers over [0, max]
@@ -184,10 +186,10 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
     // the rotated baseline origin: x just left of the swatch (the baseline; ink extends further
     // left), y at the swatch mid + half the caption width (so the upward advance centers it).
     if (const std::string mg = spec.magnitudeCaption(); !mg.empty()) {
-        const float w = iv::text::math::measureLabel(g.fonts(), mg, baseSize);
-        const float pivotX = pxX(xL) - kMagCaptionPadPx - 0.30f * baseSize;
+        const float w = iv::text::math::measureLabel(g.fonts(), mg, labelSize);
+        const float pivotX = pxX(xL) - kMagCaptionPadPx - 0.30f * labelSize;
         const float pivotY = pxY(0.5f * (yTop + yBot)) + 0.5f * w;
-        iv::text::math::appendLabelRotated(g, ov, mg, pivotX, pivotY, fbW, fbH, baseSize, kLabelColor,
+        iv::text::math::appendLabelRotated(g, ov, mg, pivotX, pivotY, fbW, fbH, labelSize, kLabelColor,
                                            -kHalfPi);
     }
 
@@ -199,7 +201,8 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
         char buf[32];
         std::snprintf(buf, sizeof(buf), "L = %.2f", static_cast<double>(spec.referenceThickness));
         centeredLabel(ov, g, buf, pxX(0.5f * (xL + xR)),
-                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 3.8f * baseSize, fbW, fbH);
+                      pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 3.8f * labelSize, fbW, fbH,
+                      labelSize);
     }
 }
 

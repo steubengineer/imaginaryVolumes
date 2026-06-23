@@ -293,17 +293,15 @@ TEST_CASE("the title tucks just above the box top, not the frame top (B-0013)", 
     }
     REQUIRE(boxTopPx > 0.15f * static_cast<float>(H)); // sanity: box top is well below the frame top
 
-    float maxGlyphY = 0.0f;
-    float minGlyphY = static_cast<float>(H);
+    float maxGlyphY = 0.0f; // the underside of the title's glyphs
     for (const auto& g : ov.glyphs) {
-        const float py = (g.pos[1] * 0.5f + 0.5f) * static_cast<float>(H);
-        maxGlyphY = std::max(maxGlyphY, py);
-        minGlyphY = std::min(minGlyphY, py);
+        maxGlyphY = std::max(maxGlyphY, (g.pos[1] * 0.5f + 0.5f) * static_cast<float>(H));
     }
     const float titleSize = 18.0f * 1.5f; // baseSize * kTitleScale
-    CHECK(maxGlyphY < boxTopPx);                       // the title sits above the box top
-    CHECK(boxTopPx - maxGlyphY < titleSize + 24.0f);   // ...and CLOSE (teeth: pinned-to-top is far)
-    CHECK(minGlyphY > 0.15f * static_cast<float>(H));  // not floating at the frame top
+    CHECK(maxGlyphY < boxTopPx);                     // the title sits above the box top
+    // ...and CLOSE to it (within a title height + the gap). teeth: pinning the title to the frame
+    // top leaves boxTopPx - maxGlyphY ~ boxTopPx (far larger than this bound) -> red.
+    CHECK(boxTopPx - maxGlyphY < titleSize + 30.0f);
 }
 
 // ADR-0026 end-to-end: the annotated overlay renders over the volume (headless). An

@@ -42,7 +42,7 @@ placement+rotated caption (ADR-0034/D-0050), AND plot-left/legend-right framing 
 now done**; relative label sizes still open), B-0014 (legend `L` in data units), B-0016 (legend
 sci-notation); B-0007/0008/0010/0011/0012/0015 resolved. ADR index current (**ADR-0001…0035
 Accepted**; 0009 superseded by 0015; 0034 amends 0028/0031; 0035 amends 0012). Gates: full suite
-**1411/106**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
+**1410/106**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
 text-free (transfer core, no HarfBuzz) builds; no HarfBuzz type in any public header; `iv_view`
 (via makePlot) present-path validation-CLEAN.
 
@@ -55,15 +55,15 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 ## In Flight (work started, not finished)
 **Nothing in flight.** Three B-0013 items done (D-0049 axis labels, ADR-0034/D-0050 legend
 placement+caption, ADR-0035/D-0051 plot-left framing, + the title tucked to the box top); the tree
-is clean. Full suite **1411/106**;
+is clean. Full suite **1410/106**;
 ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN.
 
 ## Next Action
 Continue the deferred visual-polish backlog (no math left). The overlap, legend placement/caption,
 and the plot-left/legend-right framing are done — remaining, in suggested order:
-- **B-0013 (rest)** relative **label sizes** across the plot (title / axis / tick / legend caption /
-  legend value labels) — tune the scale constants for balance. Pure presentation; journaled, no ADR.
-  (Legend caption is small; the rotated `|f|` reads but is modest — a sizing candidate.)
+- **B-0013 (rest)** label **sizes/spacing** fine-tuning — the title now tucks above the box
+  (`kTitleGapPx`) and legend labels render at ~axis-label size (`kLegendLabelScale = 1.3`); remaining
+  is any further balance tuning across title/axis/tick. Pure presentation; journaled, no ADR.
 - **B-0016** legend magnitude-axis **scientific notation** (`1×10⁻³`) — unblocked: reuse the M9
   math layout to typeset the generated mantissa×10^exp (a `legend_builder` change). The new
   `appendLabelRotated` could also rotate the value-label column if wanted.
@@ -121,7 +121,10 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   never moves left of the incoming default, and clamps so the right value labels stay on screen
   (extreme portrait keeps the default + accepts residual overlap). The **magnitude** caption is drawn
   rotated −π/2, vertically centered LEFT of the swatch (`appendLabelRotated`), NOT centered above; the
-  phase caption / ticks / value labels / `L` are unchanged. The `placeLegendRight` px tunables
+  phase caption / ticks / value labels / `L` are unchanged. **All** legend labels render at
+  `labelSize = baseSize · kLegendLabelScale` (1.3, ~the plot's axis-label size), not the tick
+  `baseSize`; the `centeredLabel`/`leftLabel` helpers take an explicit size and the vertical label
+  spacing is in `labelSize` units. The `placeLegendRight` px tunables
   (`kBoxGapPx`/`kCapAllowPx`/`kValAllowPx`/`kRightEdgeNdc`) live in legend_builder.cpp.
   **Plot-left framing (ADR-0035, D-0051):** when a legend is shown the facade frames the plot into
   the LEFT 75% via `RenderParams::imageShiftNdcX = −0.25` + a larger distance (`kPlotFrameDistance

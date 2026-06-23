@@ -35,7 +35,7 @@ constexpr float kTickLabelMargin = 30.0f; // px outward from the tick (clears th
 constexpr float kAxisLabelGap = 12.0f;    // px gap between the tick-label band and the axis label
 constexpr float kAxisLabelScale = 1.3f;   // axis labels, relative to tick labels
 constexpr float kTitleScale = 1.5f;       // plot title, relative to tick labels
-constexpr float kTitleGapPx = 10.0f;      // gap between the title's underside and the box top
+constexpr float kTitleGapPx = 26.0f;      // gap between the title's underside and the box top
 constexpr float kLabelCapHalf = 0.35f;    // half the cap height as a fraction of pixel size:
                                           // both the cap-centering nudge and a label's box height
 

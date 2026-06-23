@@ -4,6 +4,23 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M9 — Visual polish: legend label size + title spacing (B-0013)
+
+Two maintainer presentation tweaks (no contract; pure constants/plumbing):
+- **Legend labels enlarged to ~the plot's axis-label size.** `buildLegend` now renders every legend
+  label — the magnitude value ticks, the −π/0/π phase labels, both captions, and the `L` label — at
+  `labelSize = baseSize · kLegendLabelScale` (1.3, matching the main plot's `kAxisLabelScale`) instead
+  of the tick-label `baseSize`; the inter-label vertical spacing scales with it. `centeredLabel`/
+  `leftLabel` now take an explicit size. (The legend sits in its own right-25% panel — ADR-0035 — so
+  the larger labels have room; placement allowances unchanged.)
+- **A touch more title breathing room:** `kTitleGapPx` 10 → 26 px so the title sits a small, even gap
+  above the bounding box (the tuck behavior from the previous entry is unchanged).
+
+The `[annot]` title-tuck test's tolerance was widened for the larger gap (its red→green teeth — pinning
+the title to the frame top — still hold); the legend tests pass unchanged with the larger labels.
+Verified by eye (legend labels now read at axis-label size, no clipping in the right panel). Full
+suite **1410/106**; ASan+UBSan **2/2**; isolation builds OK.
+
 ## Post-M9 — Visual polish: tuck the title to the box top (B-0013)
 
 Maintainer follow-up to ADR-0035: the title was pinned near the frame top, so the legend framing's

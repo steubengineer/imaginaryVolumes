@@ -10,6 +10,36 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0049 — Axis-label placement: adaptive tick-band clearance + facade framing margin (B-0013)
+- **Date / milestone:** 2026-06-22 / post-M9 (visual-polish pass) — maintainer-directed
+- **Choice:** Fix the M9-observed defect where axis labels overlap the tick-value numbers ("y (nm)"
+  over "0.0"). Options: (a) bump the fixed outward offset `kAxisLabelMargin` to a larger constant;
+  (b) compute the offset from the actual tick-label band, projected along the screen-outward normal.
+  And — surfaced while eyeballing — the cube is framed edge-to-edge, so any sufficiently wide label
+  clips at the framebuffer edge; options for that: clamp labels on-frame (re-introduces overlap) vs.
+  leave a framing margin.
+- **Decision:** **(b) + framing margin.** (1) Replace the fixed `kAxisLabelMargin` with
+  `axisLabelOutwardPx(n, tickMargin, tick/axis half-extents, gap)` (annotations.cpp/.hpp): each label
+  is an axis-aligned box whose reach along the unit screen normal `n` is its support
+  `|nx|·halfW + |ny|·halfH`, so the axis label sits one `gap` beyond the tick band's outer edge — it
+  grows with tick *width* on a vertical edge and tick *height* on a horizontal one (orientation-
+  adaptive; a single constant cannot be). (2) Add a **facade-local** framing pull-back: renderPlot
+  and makePlot frame the cube at orbit distance **3.3** (`kPlotFrameDistance`, duplicated in both
+  facade TUs, kept in step) so the box fills ~75% of the frame and labels have room — *without*
+  touching the global `RenderParams`/`OrbitCamera` defaults (reset/`R` still returns to the ADR-0018
+  home).
+- **Rationale:** A fixed margin cannot clear both a tall tick stack (vertical edge, wide numbers) and
+  a short one (horizontal edge) — the collision direction rotates with the camera, so the offset must
+  too. The overlap fix alone moved wide labels off the (edge-to-edge) frame; framing room is the
+  necessary complement so the now-separated labels are actually visible. Clamping was rejected — it
+  would slide the label back onto the ticks.
+- **Contract impact:** none. Internal presentation only; ADR-0026 placement (labels outside the
+  silhouette) and ADR-0018 camera mechanism unchanged — `axisLabelOutwardPx` is internal text-layer
+  testability surface, and the framing uses the documented `setDistance`/`p.eye` within ADR-0018's
+  clamps. No public API or facade signature changed.
+- **Deferred alternatives:** the broader B-0013 polish (legend panel placement, caption/phase-label
+  positions, label sizes) remains open in the Backlog.
+
 ### D-0048 — M9 math typesetting via an owned subset engine over OpenType MATH (not a TeX engine)
 - **Date / milestone:** 2026-06-21 / M9 (CONTRACT) — maintainer-approved
 - **Choice:** How to render inline LaTeX math in labels (`"Wave $f(x)=\frac{1}{2}$"`) between two
@@ -1019,8 +1049,13 @@ the same day. Future entries prepend above.)
 - **Observed (M9 eyeballing, 2026-06-21):** axis **labels overlap the tick-value numbers** (e.g.
   "y (nm)" sitting over "0.0") — the outward label offset (`kAxisLabelMargin`, ADR-0026) wants
   tuning, more so now that math labels can be wider/taller. A concrete first target for the pass.
+- **Partially resolved (2026-06-22, D-0049):** the axis-label/tick-number **overlap** is fixed
+  (orientation-adaptive `axisLabelOutwardPx`) and the cube is now **framed with a margin** (facade
+  distance 3.3) so wide labels are no longer clipped at the frame edge. **Still open:** legend panel
+  placement (`LegendSpec::rectNdc`), legend caption / −π·0·π phase-label / magnitude-tick / `L`
+  positions, and the relative **label sizes** across the plot (title/axis/tick/legend).
 - **Why deferred:** appearance refinement, batched into the polish pass; no contract impact.
-- **Revisit when:** the next session (the visual-polish pass).
+- **Revisit when:** continuing the visual-polish pass (legend placement & sizes next).
 - **Contract link:** none (presentation; ADR-0026 annotation constants + ADR-0028 legend
   constants — journaled refinements, not contract changes).
 

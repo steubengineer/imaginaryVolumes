@@ -4,6 +4,31 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M9 — Visual polish: axis-label placement (B-0013)
+
+First item of the deferred visual-polish pass (D-0049; no ADR — internal presentation; ADR-0026
+placement & ADR-0018 camera mechanism unchanged):
+
+- **Adaptive axis-label offset.** Replaced the fixed `kAxisLabelMargin` (66 px) with
+  `axisLabelOutwardPx(n, …)` (annotations.cpp/.hpp): the axis label clears the actual tick-label
+  band, measured as each label box's *support* along the screen-outward normal — so it grows with
+  tick *width* on a vertical edge and tick *height* on a horizontal one. Fixes the M9-observed
+  overlap ("y (nm)" sitting over "0.0").
+- **Facade framing margin.** `renderPlot`/`makePlot` now frame the unit cube at orbit distance
+  **3.3** (`kPlotFrameDistance`, ~75% frame fill) so wide labels are not clipped at the frame edge —
+  facade-local, leaving the global `RenderParams`/`OrbitCamera` defaults (and reset/`R`) untouched.
+
+**Teeth:** new `[annot]` test "axis label offset clears the tick-label band (B-0013)" pins the
+clearance predicate (axis-label near edge − tick-band outer edge = `gap` for both vertical and
+horizontal normals; orientation-adaptivity: `horiz > vert`). **Fault injection demonstrated** —
+zeroing the tick-band reach (the old "tick labels are zero-size" behavior) drives the horizontal
+clearance to **−16 px** (overlap) vs. the required **+12 px**, going red; restored to green. Also
+checked: the old fixed 66 px fails the wide-tick case; the empty-tick case stays > tickMargin.
+Verified end-to-end with before/after headless renders (the "0" tick goes from occluded to legible;
+"y (nm)" from clipped to fully on-frame); viewer `makePlot` runs validation-CLEAN. Full suite
+**1331/101**; ASan+UBSan **2/2**. **Still open (B-0013):** legend panel placement, caption/phase/
+magnitude-tick/`L` positions, relative label sizes.
+
 ## Post-M9 — Macro table additions
 
 Additive entries to the ADR-0033 §2 macro table (its designated extension point — no contract

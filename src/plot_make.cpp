@@ -22,6 +22,12 @@ namespace iv {
 
 namespace {
 
+// Initial orbit distance that frames the unit cube with a margin for axis labels (B-0013).
+// Facade-local; kept in step with renderPlot's kPlotFrameDistance (plot_render.cpp) so the
+// interactive and headless plots frame identically. (Reset/`R` returns to the OrbitCamera
+// default, ADR-0018.)
+constexpr float kPlotFrameDistance = 3.3f;
+
 // Rendering state owned by the Viewer's onFrame closure, kept in a shared_ptr so the closure
 // stays copyable for std::function (a move-only captured Shaper would not). The transfer state
 // is read LIVE from each frame's RenderParams, so hotkeys update the legend.
@@ -52,6 +58,8 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
     }
     const iv::MagnitudeRange range = vol->magnitudeRange();
     viewer->setVolume(std::move(*vol));
+
+    viewer->camera().setDistance(kPlotFrameDistance); // frame with a label margin (B-0013)
 
     iv::vk::RenderParams& p = viewer->params();
     p.colormapMode = options.colormapMode;

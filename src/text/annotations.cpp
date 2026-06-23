@@ -4,6 +4,7 @@
 #include "iv/text/text_layout.hpp"
 #include "iv/vk/view_projection.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -31,9 +32,11 @@ constexpr Color kLabelColor{1.0f, 1.0f, 1.0f, 1.0f};
 constexpr float kTickMajorLen = 0.045f;
 constexpr float kTickMinorLen = 0.024f;
 constexpr float kTickLabelMargin = 30.0f; // px outward from the tick (clears the tick mark)
-constexpr float kAxisLabelMargin = 66.0f; // px outward (beyond the larger tick labels)
+constexpr float kAxisLabelGap = 12.0f;    // px gap between the tick-label band and the axis label
 constexpr float kAxisLabelScale = 1.3f;   // axis labels, relative to tick labels
 constexpr float kTitleScale = 1.5f;       // plot title, relative to tick labels
+constexpr float kLabelCapHalf = 0.35f;    // half the cap height as a fraction of pixel size:
+                                          // both the cap-centering nudge and a label's box height
 
 Vec3 add(const Vec3& a, const Vec3& b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
 Vec3 scale(const Vec3& a, float s) { return {a[0] * s, a[1] * s, a[2] * s}; }
@@ -115,11 +118,25 @@ void addCenteredLabel(Overlay& ov, MixedGlyphs& g, std::string_view s, float cx,
                       std::uint32_t fbW, std::uint32_t fbH, float pixelSize) {
     const float w = iv::text::math::measureLabel(g.fonts(), s, pixelSize);
     const float penX = cx - 0.5f * w;
-    const float penY = cy + 0.35f * pixelSize; // approx vertical centering of caps
+    const float penY = cy + kLabelCapHalf * pixelSize; // approx vertical centering of caps
     iv::text::math::appendLabel(g, ov, s, penX, penY, fbW, fbH, pixelSize, kLabelColor);
 }
 
 } // namespace
+
+float axisLabelOutwardPx(float nx, float ny, float tickMargin, float tickHalfW, float tickHalfH,
+                         float axisHalfW, float axisHalfH, float gap) {
+    // Outward offset (px), along the unit screen normal n=(nx,ny), from the box-edge midpoint
+    // to the axis-label CENTER, so the axis label clears the tick-label band rather than
+    // colliding with it (B-0013: "y (nm)" over "0.0"). Each label is an axis-aligned box; its
+    // reach along n is the box support, |nx|·halfW + |ny|·halfH — so a vertical edge (n≈±x)
+    // clears the tick *width*, a horizontal edge (n≈±y) the tick *height*. The axis label sits
+    // one `gap` beyond the tick band's outer edge (tickMargin + tick reach), plus its own reach.
+    // With no tick labels (tickHalf*≈0) it reduces to clearing the tick marks (tickMargin).
+    const float tickReach = std::abs(nx) * tickHalfW + std::abs(ny) * tickHalfH;
+    const float axisReach = std::abs(nx) * axisHalfW + std::abs(ny) * axisHalfH;
+    return tickMargin + tickReach + gap + axisReach;
+}
 
 void buildAnnotations(Overlay& ov, MixedGlyphs& g, const PlotAxes& axes,
                       const iv::vk::RenderParams& camera, std::uint32_t fbW, std::uint32_t fbH) {
@@ -225,6 +242,7 @@ void buildAnnotations(Overlay& ov, MixedGlyphs& g, const PlotAxes& axes,
             continue;
         }
 
+        float maxTickWidth = 0.0f; // widest drawn tick label (px) — sizes the axis-label offset
         if (axes.tickLabels) {
             for (const double v : ticks.major) {
                 const float wA = static_cast<float>(iv::world(ax, v));
@@ -237,8 +255,10 @@ void buildAnnotations(Overlay& ov, MixedGlyphs& g, const PlotAxes& axes,
                 if (px[2] <= 0.0f) {
                     continue;
                 }
-                addCenteredLabel(ov, g, iv::formatTick(v, ticks.step),
-                                 px[0] + bestOut[0] * kTickLabelMargin,
+                const std::string t = iv::formatTick(v, ticks.step);
+                maxTickWidth =
+                    std::max(maxTickWidth, iv::text::math::measureLabel(g.fonts(), t, baseSize));
+                addCenteredLabel(ov, g, t, px[0] + bestOut[0] * kTickLabelMargin,
                                  px[1] + bestOut[1] * kTickLabelMargin, fbW, fbH, baseSize);
             }
         }
@@ -249,9 +269,16 @@ void buildAnnotations(Overlay& ov, MixedGlyphs& g, const PlotAxes& axes,
                     worldPoint(a, 0.5f, static_cast<float>(bestB), static_cast<float>(bestC));
                 const auto px = iv::vk::projectToPixel(M, mid, fbW, fbH);
                 if (px[2] > 0.0f) {
-                    addCenteredLabel(ov, g, lbl, px[0] + bestOut[0] * kAxisLabelMargin,
-                                     px[1] + bestOut[1] * kAxisLabelMargin, fbW, fbH,
-                                     baseSize * kAxisLabelScale);
+                    const float axisSize = baseSize * kAxisLabelScale;
+                    const float axisW = iv::text::math::measureLabel(g.fonts(), lbl, axisSize);
+                    // Clear the tick-label band, adapting to the edge's screen orientation, so
+                    // wide tick numbers no longer collide with the axis label (B-0013).
+                    const float margin = axisLabelOutwardPx(
+                        bestOut[0], bestOut[1], kTickLabelMargin, 0.5f * maxTickWidth,
+                        kLabelCapHalf * baseSize, 0.5f * axisW, kLabelCapHalf * axisSize,
+                        kAxisLabelGap);
+                    addCenteredLabel(ov, g, lbl, px[0] + bestOut[0] * margin,
+                                     px[1] + bestOut[1] * margin, fbW, fbH, axisSize);
                 }
             }
         }

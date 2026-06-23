@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstdint>
 #include <vector>
@@ -202,6 +203,55 @@ TEST_CASE("annotation labels stay outside the projected box silhouette", "[annot
     }
     INFO("glyph verts inside silhouette: " << inside << " / " << ov.glyphs.size());
     CHECK(inside == 0);
+}
+
+// B-0013 (an ADR-0026 placement refinement): the axis label is offset outward far enough to
+// clear the tick-label band, replacing the old fixed 66px that let wide tick numbers collide
+// with the axis label ("y (nm)" over "0.0"). The offset is the support of each label box along
+// the screen normal, so it adapts to camera orientation — growing with tick *width* on a
+// vertical edge and with tick *height* on a horizontal one.
+TEST_CASE("axis label offset clears the tick-label band (B-0013)", "[annot]") {
+    using iv::text::axisLabelOutwardPx;
+    const float tickMargin = 30.0f;
+    const float gap = 12.0f;
+    const float tickHalfW = 28.0f;        // a wide tick number like "-5.0"
+    const float tickHalfH = 0.35f * 18.0f;
+    const float axisHalfW = 40.0f;
+    const float axisHalfH = 0.35f * 23.4f;
+
+    // The clearance: the axis label's near edge, minus the tick band's outer edge, along n.
+    // Equals `gap` exactly when the layout is correct; negative means the boxes overlap.
+    auto clearance = [&](float nx, float ny, float offset) {
+        const float tickOuter = tickMargin + std::abs(nx) * tickHalfW + std::abs(ny) * tickHalfH;
+        const float axisNear = offset - (std::abs(nx) * axisHalfW + std::abs(ny) * axisHalfH);
+        return axisNear - tickOuter;
+    };
+
+    const float horiz = axisLabelOutwardPx(1.0f, 0.0f, tickMargin, tickHalfW, tickHalfH, axisHalfW,
+                                           axisHalfH, gap); // vertical edge: tick width dominates
+    const float vert = axisLabelOutwardPx(0.0f, 1.0f, tickMargin, tickHalfW, tickHalfH, axisHalfW,
+                                          axisHalfH, gap); // horizontal edge: tick height dominates
+
+    CHECK(horiz > vert); // orientation-adaptive — a single fixed margin would make these equal
+    CHECK(clearance(1.0f, 0.0f, horiz) == Catch::Approx(gap));
+    CHECK(clearance(0.0f, 1.0f, vert) == Catch::Approx(gap));
+
+    // teeth: the OLD fixed 66px margin does NOT clear the wide horizontal tick band — the axis
+    // label lands inside it. This is the exact defect B-0013 reported.
+    CHECK(clearance(1.0f, 0.0f, 66.0f) < 0.0f);
+
+    // A diagonal normal blends both reaches, strictly between the axis-aligned extremes.
+    const float diag = axisLabelOutwardPx(0.70711f, 0.70711f, tickMargin, tickHalfW, tickHalfH,
+                                          axisHalfW, axisHalfH, gap);
+    CHECK(diag < horiz);
+    CHECK(diag > vert);
+
+    // No tick labels (zero half-extents): reduces to clearing the tick marks + gap + own reach,
+    // never less than tickMargin (so the axis label still clears the box).
+    const float bare = axisLabelOutwardPx(0.0f, 1.0f, tickMargin, 0.0f, 0.0f, axisHalfW, axisHalfH,
+                                          gap);
+    CHECK(bare > tickMargin);
+    CHECK(bare == Catch::Approx(tickMargin + gap + axisHalfH));
 }
 
 // ADR-0026 end-to-end: the annotated overlay renders over the volume (headless). An

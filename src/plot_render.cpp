@@ -13,9 +13,31 @@
 #include "iv/vk/renderer.hpp"
 #include "iv/vk/volume.hpp"
 
+#include <array>
+#include <cmath>
+
 namespace iv {
 
 namespace {
+
+// Orbit distance at which the facade frames the unit cube, leaving a margin around the box so
+// wide axis labels are not clipped at the framebuffer edge (B-0013). Facade-local: it does not
+// change the global RenderParams/OrbitCamera defaults. Kept in step with makePlot's
+// kPlotFrameDistance (plot_make.cpp) so headless and interactive plots frame identically.
+constexpr float kPlotFrameDistance = 3.3f;
+
+// Pull the camera back along its view direction to kPlotFrameDistance from the target, so the
+// cube fills ~75% of the frame (room for labels). Preserves the view angle and target.
+void frameUnitCube(iv::vk::RenderParams& p) {
+    const std::array<float, 3> dir{p.eye[0] - p.target[0], p.eye[1] - p.target[1],
+                                   p.eye[2] - p.target[2]};
+    const float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+    if (len <= 0.0f) {
+        return;
+    }
+    const float s = kPlotFrameDistance / len;
+    p.eye = {p.target[0] + dir[0] * s, p.target[1] + dir[1] * s, p.target[2] + dir[2] * s};
+}
 
 // Fan the single-source transfer state out to the RenderParams (ADR-0029).
 void applyTransfer(iv::vk::RenderParams& p, const PlotOptions& o) {
@@ -67,6 +89,7 @@ Result<iv::vk::ImageReadback> renderPlotImpl(std::span<const std::complex<T>> fi
 
     iv::vk::RenderParams p;
     applyTransfer(p, options);
+    frameUnitCube(p); // leave a margin for axis labels (B-0013)
 
     // One mixed-font glyph builder spans the annotations + legend labels; finish() merges the
     // roman/italic/math atlases once (ADR-0032/0033). Labels may carry inline `$…$` math.

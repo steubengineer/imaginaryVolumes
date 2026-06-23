@@ -1,12 +1,13 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-21 by the M9 session (Claude / Opus 4.8)
-**Active milestone:** **M9 — Mathematical typesetting in labels — COMPLETE & locked.** Inline
-LaTeX-subset math in labels via an owned subset parser + OpenType-MATH box layout over
-`hb_ot_math_*` (no TeX engine; D-0048): **ADR-0032 (mixed-font substrate)** + **ADR-0033 (inline
-`$…$` math model, subset & layout)**, both Accepted. Caller labels (title/axis/unit/legend
-captions) now render publication-quality math. (Founding arc M1–M8 also complete & locked.) Next
-work is the deferred visual-polish backlog; a new milestone (if any) starts at ORIENT → CONTRACT.
+**Last updated:** 2026-06-22 by the visual-polish session (Claude / Opus 4.8)
+**Active milestone:** **M1–M9 all COMPLETE & locked.** Now in the **deferred visual-polish pass**
+(no new milestone yet — these are journaled presentation refinements, not contract changes; a new
+milestone, if any, starts at ORIENT → CONTRACT). M9 delivered inline LaTeX-subset math in labels
+via an owned subset parser + OpenType-MATH box layout over `hb_ot_math_*` (no TeX engine; D-0048):
+**ADR-0032 (mixed-font substrate)** + **ADR-0033 (inline `$…$` math)**, both Accepted. **Latest
+work (2026-06-22, D-0049):** the first B-0013 polish item — axis labels no longer overlap the
+tick-value numbers (orientation-adaptive offset) and plots are framed with a label margin.
 
 ## Current State
 The library does the full job end to end: ingest a complex field (`std::complex<float|
@@ -33,13 +34,14 @@ CHANGELOG.md).
   `FontSet`+shared `MixedGlyphs`. Legend `fieldName` default → `"$f$"` (math italic; amends
   ADR-0031). Resolves **B-0015**; follow-on B-0016 (legend sci-notation).
 
-Decisions D-0001…D-0048; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
-(LICENSE), B-0013 (legend/label visual polish — axis labels overlap tick numbers), B-0014 (legend
-`L` in data units), B-0016 (legend sci-notation); B-0007/0008/0010/0011/0012/0015 resolved. ADR
-index current (**ADR-0001…0033 Accepted**; 0009 superseded by 0015). Gates: full suite
-**1323/100**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
-text-free (transfer core, no HarfBuzz) builds; no HarfBuzz type in any public header; `iv_view`
-(via makePlot) present-path validation-CLEAN.
+Decisions D-0001…D-0049; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
+(LICENSE), B-0013 (legend/label visual polish — **axis-label overlap + framing now done (D-0049)**;
+legend placement & sizes still open), B-0014 (legend `L` in data units), B-0016 (legend
+sci-notation); B-0007/0008/0010/0011/0012/0015 resolved. ADR index current (**ADR-0001…0033
+Accepted**; 0009 superseded by 0015). Gates: full suite **1331/101**; ASan+UBSan `ctest` **2/2**;
+GLFW-free (renderPlot present, makePlot absent) builds; text-free (transfer core, no HarfBuzz)
+builds; no HarfBuzz type in any public header; `iv_view` (via makePlot) present-path
+validation-CLEAN.
 
 ## Test data (gitignored)
 `example_data/` (NOT tracked — `.gitignore`: `/example_data/`, `*.c64`): 11 heavy raw
@@ -48,18 +50,25 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** M9 is closed; the tree is clean at the M9 commits. Full suite **1323/100**;
-ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN.
+**Nothing in flight.** The B-0013 axis-label item (D-0049) is complete; the tree is clean.
+Full suite **1331/101**; ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer
+present-path validation-CLEAN.
 
 ## Next Action
-M9 is achieved and locked. Remaining work is the deferred visual-polish backlog (no math left):
-- **B-0013** legend/label **placement & sizes** — eyeballing the M9 plot, **axis labels overlap
-  the tick-value numbers** (e.g. "y (nm)" over "0.0"); the outward offsets want tuning now that
-  labels can be wider. Pure presentation (ADR-0026 constants); journaled refinement, no ADR.
-- **B-0016** legend magnitude-axis **scientific notation** (`1×10⁻³`) — now unblocked: reuse the
-  M9 math layout to typeset the generated mantissa×10^exp (a `legend_builder` change).
+Continue the deferred visual-polish backlog (no math left). The axis-label overlap + framing
+(B-0013 first item) is done — remaining, in suggested order:
+- **B-0013 (rest)** legend/label **placement & sizes** — legend panel position (`LegendSpec::
+  rectNdc`), the legend caption / −π·0·π phase-label / magnitude-tick / `L` positions, and the
+  relative label sizes (title/axis/tick/legend). Pure presentation; journaled refinement, no ADR.
+  (In the framed plot the right-side legend sits a touch close to the z-axis labels — a candidate.)
+- **B-0016** legend magnitude-axis **scientific notation** (`1×10⁻³`) — unblocked: reuse the M9
+  math layout to typeset the generated mantissa×10^exp (a `legend_builder` change).
 - **B-0014** legend `L` in data units (short ADR); **B-0005** more colormaps (extends ADR-0014);
   **B-0009** project LICENSE.
+To eyeball: build `renderPlot` into a tiny driver (the scratch pattern: link `iv_text`, call
+`iv::renderPlot` with labeled `PlotOptions.axes`, write a PNG via `examples/png.hpp`), or
+`DISPLAY=:1 ./build/debug/iv_view --input example_data/wf1.c64 --dims 150 150 150 --ylabel y
+--yunit nm` (interactive).
 
 Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/debug/iv_view
 --input example_data/wf1.c64 --dims 150 150 150` (its legend field name is now the math-italic `$f$`).
@@ -115,6 +124,16 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   composing a legend calls it FIRST, then `buildLegend` (which appends, sharing one `Shaper` so
   glyph atlas offsets stay valid). A new overlay channel MUST be added to `Overlay::clear()`.
   Labels sit on the box silhouette offset outward — the outward offset guards no-data-overlap.
+  **Axis-label placement (D-0049, B-0013):** the axis-label outward offset is NOT a fixed margin —
+  it's `iv::text::axisLabelOutwardPx(n, …)` (annotations.hpp), sized so the label clears the actual
+  tick-label band along the screen-outward normal (tick *width* dominates a vertical edge, *height*
+  a horizontal one). Keep `kLabelCapHalf` in lock-step between the offset math and
+  `addCenteredLabel`'s vertical-centering nudge (both use it as the label's half cap-height). The
+  `[annot]` "clears the tick-label band" test pins this. **Facade framing:** `renderPlot`
+  (plot_render.cpp) and `makePlot` (plot_make.cpp) frame the cube at orbit distance
+  `kPlotFrameDistance = 3.3` (duplicated in both TUs, intentionally matched) so wide labels are not
+  clipped — facade-local; the global `RenderParams`/`OrbitCamera` defaults (and reset/`R`) are
+  unchanged. If you retune one facade's distance, retune the other to match.
 - **Mixed-font substrate (ADR-0032, M9):** multiple faces in one overlay go through
   `iv::text::MixedGlyphs` (build with `appendRun(Face,…)` / `appendGlyph(Face,glyphId,…)`, then
   ONE `finish(overlay)`), NOT repeated `appendText`. `finish()` concatenates each used face's Slug
@@ -186,7 +205,7 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
 - Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M9 complete & locked).
 - Contracts: `docs/adr/INDEX.md` — **ADR-0001…0033 Accepted** (0009 superseded by 0015;
   0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020; 0031 amends 0028/0029).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0048), Backlog B-0001…B-0016.
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0049), Backlog B-0001…B-0016.
 - Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
   makePlot); `iv_bench` (perf).

@@ -545,6 +545,19 @@ float appendLabel(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, std::string_vie
     return x - penXpx;
 }
 
+float appendLabelRotated(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, std::string_view label,
+                         float pivotXpx, float pivotYpx, std::uint32_t fbWidth,
+                         std::uint32_t fbHeight, float pixelSize,
+                         const std::array<float, 4>& color, float angleRad) {
+    // Lay the label out horizontally at the pivot, then rotate the quads it added in pixel space
+    // about that pivot (ADR-0034). The pivot is the rotated baseline origin.
+    const MixedGlyphs::Marker before = glyphs.marker();
+    const float advance =
+        appendLabel(glyphs, overlay, label, pivotXpx, pivotYpx, fbWidth, fbHeight, pixelSize, color);
+    glyphs.rotateSince(before, angleRad, pivotXpx, pivotYpx, fbWidth, fbHeight);
+    return advance;
+}
+
 float measureLabel(FontSet& fonts, std::string_view label, float pixelSize) {
     // Dry layout into throwaway sinks (the framebuffer size only affects the discarded NDC
     // positions, not the px advance). Glyph encoding is cached in the shapers (harmless).

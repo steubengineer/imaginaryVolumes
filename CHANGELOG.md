@@ -4,6 +4,38 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M9 — Visual polish: legend placement & rotated caption (B-0013, ADR-0034)
+
+Second item of the visual-polish pass (D-0050; **ADR-0034**, which amends ADR-0028 §(3) / ADR-0031
+caption placement). Two maintainer-reported legend defects, plus the text primitive enabling the fix:
+
+- **Aspect-aware placement.** `iv::text::placeLegendRight` projects the 8 unit-cube corners with the
+  live `viewProjection(camera, aspect)` and pushes the swatch right so it clears the box's right NDC
+  extent — clamped to a no-op in wide windows and to keep the right-edge value labels on screen, and
+  never left of the default (extreme portrait keeps the default rather than worsening the overlap).
+  Fixes the legend overrunning the box in taller-than-wide windows. Per-frame in `makePlot` (tracks
+  orbit/resize), once in `renderPlot`. The public `LegendSpec` is unchanged — the facade fills its
+  existing `rectNdc`.
+- **Compact rotated magnitude caption.** `|f|` moves from centered-above to vertically-centered just
+  left of the swatch, rotated −π/2 (reads bottom-to-top) — the conventional, compact colorbar-title
+  place. Phase caption, ticks, value labels, and `L` are unchanged.
+- **Rotated-label primitive** (`iv_text`, extends ADR-0033): `MixedGlyphs::rotateSince` +
+  `math::appendLabelRotated` lay a label out horizontally then rotate its glyph quads in pixel space,
+  keeping the Slug `texcoord` fixed so the outline is unchanged and only the screen placement
+  rotates — no change to the math/box layout, no second atlas. Glyph quads only (math *rules*
+  unsupported in a rotated label; captions never use them).
+
+**Teeth** (`[legend]`, host): (1) **rotation** — a label rotated −π/2 maps each quad corner's pixel
+offset `(dx,dy) → (dy,−dx)` with `texcoord`/`glyphLoc` untouched, and angle 0 is the identity;
+**fault injection:** flipping the `sin` sign breaks the corner map → red. (2) **caption side** — the
+magnitude-caption glyphs all sit in the swatch's vertical mid-band and left of its left edge;
+**fault:** the old centered-above placement puts none in the mid-band → red. (3) **placement** — a
+square/tall window pushes the swatch right of the default to the on-screen limit (clearing the box),
+a wide window is the exact default no-op, and no aspect moves it left of default; **fault:** ignoring
+the box leaves it at the default in the tall case → red. Verified end-to-end with before/after
+headless renders at square/tall/wide aspects; `makePlot` runs validation-CLEAN. Full suite
+**1394/104**; ASan+UBSan **2/2**. **Still open (B-0013):** relative label sizes across the plot.
+
 ## Post-M9 — Visual polish: axis-label placement (B-0013)
 
 First item of the deferred visual-polish pass (D-0049; no ADR — internal presentation; ADR-0026

@@ -97,7 +97,8 @@ Result<iv::vk::ImageReadback> renderPlotImpl(std::span<const std::complex<T>> fi
     iv::text::MixedGlyphs glyphs(*fonts);
     iv::text::buildAnnotations(ov, glyphs, options.axes, p, width, height);
     if (options.showLegend) {
-        const iv::LegendSpec ls = legendFor(options, vol->magnitudeRange());
+        iv::LegendSpec ls = legendFor(options, vol->magnitudeRange());
+        iv::text::placeLegendRight(ls, p, width, height); // clear the box, aspect-aware (ADR-0034)
         iv::text::buildLegend(ov, glyphs, ls, width, height);
     }
     glyphs.finish(ov);

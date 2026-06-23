@@ -47,6 +47,18 @@ float appendLabel(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, std::string_vie
 // The width (px) `label` would occupy at `pixelSize`, without emitting anything (for placement).
 [[nodiscard]] float measureLabel(FontSet& fonts, std::string_view label, float pixelSize);
 
+// Emit `label` rotated by `angleRad` about the anchor (pivotXpx, pivotYpx) — the rotated baseline
+// origin (ADR-0034). Lays the label out horizontally at the pivot (appendLabel), then rotates the
+// emitted glyph quads in pixel space (MixedGlyphs::rotateSince). Returns the advance ALONG the
+// rotated baseline (px) = the horizontal measureLabel width. For the legend magnitude caption,
+// angleRad = −π/2 (reads bottom-to-top: the +x baseline advances upward). Glyph quads only —
+// inline-math RULES (fraction bars / vinculums / overlines) are NOT rotated, so a rotated label
+// must not contain them (captions never do).
+float appendLabelRotated(MixedGlyphs& glyphs, iv::vk::Overlay& overlay, std::string_view label,
+                         float pivotXpx, float pivotYpx, std::uint32_t fbWidth,
+                         std::uint32_t fbHeight, float pixelSize,
+                         const std::array<float, 4>& color, float angleRad);
+
 } // namespace iv::text::math
 
 #endif // IV_TEXT_MATH_LAYOUT_HPP

@@ -38,3 +38,4 @@
 | [ADR-0031](0031-legend-field-name.md) | Legend Field Name | Accepted | — |
 | [ADR-0032](0032-mixed-font-glyph-substrate.md) | Mixed-Font Glyph Substrate (Multiple Faces per Overlay) | Accepted | — |
 | [ADR-0033](0033-inline-math-labels.md) | Inline Math in Labels — `$…$` Model, LaTeX Subset & OpenType-MATH Layout | Accepted | — |
+| [ADR-0034](0034-legend-placement-and-rotated-caption.md) | Legend Layout v2 — Aspect-Aware Placement & Compact Rotated Magnitude Caption | Accepted | — |

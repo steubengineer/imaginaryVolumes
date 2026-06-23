@@ -14,7 +14,7 @@
 
 #include "iv/legend.hpp"
 #include "iv/text/text_layout.hpp" // iv::text::MixedGlyphs
-#include "iv/vk/renderer.hpp"      // iv::vk::Overlay
+#include "iv/vk/renderer.hpp"      // iv::vk::Overlay, RenderParams
 
 #include <cstdint>
 
@@ -22,6 +22,16 @@ namespace iv::text {
 
 void buildLegend(iv::vk::Overlay& overlay, MixedGlyphs& glyphs, const iv::LegendSpec& spec,
                  std::uint32_t fbWidth, std::uint32_t fbHeight);
+
+// Place the legend swatch just right of the projected volume box so it does not collide with the
+// plot, regardless of window aspect (ADR-0034). Projects the 8 unit-cube corners with the same
+// view-projection the annotations use (ADR-0012/0026), and sets spec.rectNdc's left/right (the
+// swatch WIDTH and vertical extent are preserved) so the swatch clears the box's right NDC extent
+// — clamped to a no-op for wide windows and to keep the right-edge value labels on screen. A
+// degenerate/behind-camera projection leaves spec.rectNdc unchanged. Call before buildLegend; the
+// facade calls it per frame (live camera) so the legend tracks orbit/resize.
+void placeLegendRight(iv::LegendSpec& spec, const iv::vk::RenderParams& camera,
+                      std::uint32_t fbWidth, std::uint32_t fbHeight);
 
 } // namespace iv::text
 

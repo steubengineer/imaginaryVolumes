@@ -1,9 +1,10 @@
 #include "iv/text/legend_builder.hpp"
 
-#include "iv/plot_axes.hpp"         // ticksFor, formatTick, kDefaultMajor (ADR-0024)
-#include "iv/text/math_layout.hpp"  // appendLabel / measureLabel (math-aware labels, ADR-0033)
-#include "iv/text/text_layout.hpp"  // MixedGlyphs
-#include "iv/transfer.hpp"          // phaseColor, transferNormalized (ADR-0028)
+#include "iv/plot_axes.hpp"          // ticksFor, formatTick, kDefaultMajor (ADR-0024)
+#include "iv/text/math_layout.hpp"   // appendLabel(Rotated) / measureLabel (math labels, ADR-0033)
+#include "iv/text/text_layout.hpp"   // MixedGlyphs
+#include "iv/transfer.hpp"           // phaseColor, transferNormalized (ADR-0028)
+#include "iv/vk/view_projection.hpp" // viewProjection / projectToPixel (ADR-0012/0026; ADR-0034)
 
 #include <algorithm>
 #include <array>
@@ -24,11 +25,19 @@ using Color = std::array<float, 4>;
 constexpr Color kBorderColor{0.85f, 0.86f, 0.92f, 1.0f};
 constexpr Color kLabelColor{1.0f, 1.0f, 1.0f, 1.0f};
 constexpr float kPi = 3.14159265358979323846f;
+constexpr float kHalfPi = 1.57079632679489661923f;
 constexpr int kCols = 64;            // swatch phase resolution (color interpolates between)
 constexpr int kRows = 48;            // swatch magnitude resolution (alpha interpolates between)
 constexpr float kTickLenNdc = 0.018f;
 constexpr float kPhaseLabelPadPx = 6.0f;
 constexpr float kMagLabelPadPx = 8.0f;
+constexpr float kMagCaptionPadPx = 10.0f; // gap between the rotated |f| caption and the swatch left
+
+// placeLegendRight tunables (px; converted to NDC via halfW so gaps are aspect-consistent, ADR-0034).
+constexpr float kBoxGapPx = 18.0f;      // gap between the box's right extent and the caption
+constexpr float kCapAllowPx = 30.0f;    // horizontal room for the rotated caption left of the swatch
+constexpr float kValAllowPx = 46.0f;    // room for the right-edge magnitude value labels
+constexpr float kRightEdgeNdc = 0.98f;  // keep the whole legend left of this NDC-x
 
 void sv(std::vector<OverlayVertex>& out, float x, float y, const Color& c) {
     out.push_back(OverlayVertex{{x, y, 0.0f}, c});
@@ -170,9 +179,16 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
             }
         }
     }
+    // Magnitude caption: rotated a quarter-turn CCW (reads bottom-to-top), vertically centered just
+    // left of the swatch — compact, the conventional colorbar-title place (ADR-0034). The pivot is
+    // the rotated baseline origin: x just left of the swatch (the baseline; ink extends further
+    // left), y at the swatch mid + half the caption width (so the upward advance centers it).
     if (const std::string mg = spec.magnitudeCaption(); !mg.empty()) {
-        centeredLabel(ov, g, mg, pxX(0.5f * (xL + xR)),
-                      pxY(yTop) - kPhaseLabelPadPx - 0.4f * baseSize, fbW, fbH);
+        const float w = iv::text::math::measureLabel(g.fonts(), mg, baseSize);
+        const float pivotX = pxX(xL) - kMagCaptionPadPx - 0.30f * baseSize;
+        const float pivotY = pxY(0.5f * (yTop + yBot)) + 0.5f * w;
+        iv::text::math::appendLabelRotated(g, ov, mg, pivotX, pivotY, fbW, fbH, baseSize, kLabelColor,
+                                           -kHalfPi);
     }
 
     // (6) Reference-thickness label (ADR-0030): the swatch opacity is accumulatedOpacity(a, L),
@@ -185,6 +201,51 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
         centeredLabel(ov, g, buf, pxX(0.5f * (xL + xR)),
                       pxY(yBot + kTickLenNdc) + kPhaseLabelPadPx + 3.8f * baseSize, fbW, fbH);
     }
+}
+
+void placeLegendRight(iv::LegendSpec& spec, const iv::vk::RenderParams& camera, std::uint32_t fbW,
+                      std::uint32_t fbH) {
+    if (fbW == 0u || fbH == 0u) {
+        return;
+    }
+    const float aspect = static_cast<float>(fbW) / static_cast<float>(fbH);
+    const auto M = iv::vk::viewProjection(camera, aspect);
+    const float halfW = static_cast<float>(fbW) * 0.5f;
+
+    // Rightmost NDC-x of the projected unit-cube corners that are in front of the camera.
+    bool any = false;
+    float boxRight = -2.0f;
+    for (int i = 0; i < 8; ++i) {
+        const std::array<float, 3> corner{static_cast<float>(i & 1), static_cast<float>((i >> 1) & 1),
+                                          static_cast<float>((i >> 2) & 1)};
+        const auto px = iv::vk::projectToPixel(M, corner, fbW, fbH);
+        if (px[2] <= 0.0f) {
+            continue; // behind the camera
+        }
+        boxRight = std::max(boxRight, px[0] / halfW - 1.0f); // pixel-x -> NDC-x (matches pxX)
+        any = true;
+    }
+    if (!any) {
+        return; // degenerate projection: keep the default rect
+    }
+
+    const float width = spec.rectNdc[2] - spec.rectNdc[0]; // preserve the swatch width
+    const float defaultLeft = spec.rectNdc[0];
+    const float gap = kBoxGapPx / halfW;       // px -> NDC (aspect-consistent)
+    const float capAllow = kCapAllowPx / halfW;
+    const float valAllow = kValAllowPx / halfW;
+
+    // Just right of the box (+ room for the left caption); but never left of the default (so wide
+    // windows are unchanged) and never so far right that the value labels leave the screen. In
+    // extreme portrait the box-clearance target and the on-screen cap (hi) conflict (hi < lo): we
+    // keep the default rather than move left into the box (which would only worsen the overlap).
+    const float lo = defaultLeft;
+    const float hi = kRightEdgeNdc - valAllow - width;
+    float left = std::max(boxRight + gap + capAllow, lo); // ≥ default, pushed to clear the box
+    left = std::min(left, hi);                            // keep the value labels on screen
+    left = std::max(left, lo);                            // never left of default (extreme portrait)
+    spec.rectNdc[0] = left;
+    spec.rectNdc[2] = left + width;
 }
 
 } // namespace iv::text

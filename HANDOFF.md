@@ -6,8 +6,9 @@
 milestone, if any, starts at ORIENT → CONTRACT). M9 delivered inline LaTeX-subset math in labels
 via an owned subset parser + OpenType-MATH box layout over `hb_ot_math_*` (no TeX engine; D-0048):
 **ADR-0032 (mixed-font substrate)** + **ADR-0033 (inline `$…$` math)**, both Accepted. **Latest
-work (2026-06-22, D-0049):** the first B-0013 polish item — axis labels no longer overlap the
-tick-value numbers (orientation-adaptive offset) and plots are framed with a label margin.
+work (2026-06-22):** two B-0013 polish items — (D-0049) axis labels no longer overlap the tick-value
+numbers (orientation-adaptive offset) + plots framed with a label margin; (**ADR-0034**/D-0050) the
+legend is placed aspect-aware (clears the box) with a compact rotated magnitude caption.
 
 ## Current State
 The library does the full job end to end: ingest a complex field (`std::complex<float|
@@ -34,14 +35,14 @@ CHANGELOG.md).
   `FontSet`+shared `MixedGlyphs`. Legend `fieldName` default → `"$f$"` (math italic; amends
   ADR-0031). Resolves **B-0015**; follow-on B-0016 (legend sci-notation).
 
-Decisions D-0001…D-0049; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
-(LICENSE), B-0013 (legend/label visual polish — **axis-label overlap + framing now done (D-0049)**;
-legend placement & sizes still open), B-0014 (legend `L` in data units), B-0016 (legend
-sci-notation); B-0007/0008/0010/0011/0012/0015 resolved. ADR index current (**ADR-0001…0033
-Accepted**; 0009 superseded by 0015). Gates: full suite **1331/101**; ASan+UBSan `ctest` **2/2**;
-GLFW-free (renderPlot present, makePlot absent) builds; text-free (transfer core, no HarfBuzz)
-builds; no HarfBuzz type in any public header; `iv_view` (via makePlot) present-path
-validation-CLEAN.
+Decisions D-0001…D-0050; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
+(LICENSE), B-0013 (legend/label visual polish — **axis-label overlap+framing (D-0049) AND legend
+placement+rotated caption (ADR-0034/D-0050) now done**; relative label sizes still open), B-0014
+(legend `L` in data units), B-0016 (legend sci-notation); B-0007/0008/0010/0011/0012/0015 resolved.
+ADR index current (**ADR-0001…0034 Accepted**; 0009 superseded by 0015; 0034 amends 0028/0031).
+Gates: full suite **1394/104**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot
+absent) builds; text-free (transfer core, no HarfBuzz) builds; no HarfBuzz type in any public
+header; `iv_view` (via makePlot) present-path validation-CLEAN.
 
 ## Test data (gitignored)
 `example_data/` (NOT tracked — `.gitignore`: `/example_data/`, `*.c64`): 11 heavy raw
@@ -50,25 +51,25 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** The B-0013 axis-label item (D-0049) is complete; the tree is clean.
-Full suite **1331/101**; ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer
-present-path validation-CLEAN.
+**Nothing in flight.** The B-0013 axis-label item (D-0049) and the legend placement + rotated
+caption (ADR-0034/D-0050) are complete; the tree is clean. Full suite **1394/104**; ASan+UBSan
+**2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN.
 
 ## Next Action
-Continue the deferred visual-polish backlog (no math left). The axis-label overlap + framing
-(B-0013 first item) is done — remaining, in suggested order:
-- **B-0013 (rest)** legend/label **placement & sizes** — legend panel position (`LegendSpec::
-  rectNdc`), the legend caption / −π·0·π phase-label / magnitude-tick / `L` positions, and the
-  relative label sizes (title/axis/tick/legend). Pure presentation; journaled refinement, no ADR.
-  (In the framed plot the right-side legend sits a touch close to the z-axis labels — a candidate.)
+Continue the deferred visual-polish backlog (no math left). The axis-label overlap+framing and the
+legend placement+rotated caption are done — remaining, in suggested order:
+- **B-0013 (rest)** relative **label sizes** across the plot (title / axis / tick / legend caption /
+  legend value labels) — tune the scale constants for balance. Pure presentation; journaled, no ADR.
+  (Legend caption is small; the rotated `|f|` reads but is modest — a sizing candidate.)
 - **B-0016** legend magnitude-axis **scientific notation** (`1×10⁻³`) — unblocked: reuse the M9
-  math layout to typeset the generated mantissa×10^exp (a `legend_builder` change).
+  math layout to typeset the generated mantissa×10^exp (a `legend_builder` change). The new
+  `appendLabelRotated` could also rotate the value-label column if wanted.
 - **B-0014** legend `L` in data units (short ADR); **B-0005** more colormaps (extends ADR-0014);
   **B-0009** project LICENSE.
 To eyeball: build `renderPlot` into a tiny driver (the scratch pattern: link `iv_text`, call
-`iv::renderPlot` with labeled `PlotOptions.axes`, write a PNG via `examples/png.hpp`), or
-`DISPLAY=:1 ./build/debug/iv_view --input example_data/wf1.c64 --dims 150 150 150 --ylabel y
---yunit nm` (interactive).
+`iv::renderPlot` with labeled `PlotOptions.axes`, write a PNG via `examples/png.hpp` — render at a
+TALL aspect, e.g. 600×1000, to exercise legend placement), or `DISPLAY=:1 ./build/debug/iv_view
+--input example_data/wf1.c64 --dims 150 150 150 --ylabel y --yunit nm` (interactive).
 
 Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/debug/iv_view
 --input example_data/wf1.c64 --dims 150 150 150` (its legend field name is now the math-italic `$f$`).
@@ -110,6 +111,15 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   `magnitudeCaption()`/`phaseCaption()`; `magnitudeLabel`/`phaseLabel` override — ADR-0031) and,
   like every label, may carry inline `$…$` math, typeset by the M9 math layer (ADR-0033;
   **B-0012 resolved** — the italic + NewCMMath faces are bundled). See the "Inline math" landmine.
+  **Legend placement & magnitude caption (ADR-0034, D-0050):** the swatch position is NOT the fixed
+  `rectNdc` default — the facade calls `iv::text::placeLegendRight(spec, camera, fbW, fbH)` (projects
+  the box, pushes the swatch right to clear it, aspect-aware) before `buildLegend`, per-frame in
+  `makePlot` (live camera) and once in `renderPlot`. It preserves the swatch width/vertical extent,
+  never moves left of the incoming default, and clamps so the right value labels stay on screen
+  (extreme portrait keeps the default + accepts residual overlap). The **magnitude** caption is drawn
+  rotated −π/2, vertically centered LEFT of the swatch (`appendLabelRotated`), NOT centered above; the
+  phase caption / ticks / value labels / `L` are unchanged. The `placeLegendRight` px tunables
+  (`kBoxGapPx`/`kCapAllowPx`/`kValAllowPx`/`kRightEdgeNdc`) live in legend_builder.cpp.
 - **Facade targets / isolation** (ADR-0029): `renderPlot` is in **`iv_text`** (needs text,
   not GLFW); `makePlot` is in **`iv_plot`** (gated on `IV_BUILD_VIEWER AND IV_BUILD_TEXT`).
   Core `iv` / tests / `iv_bench` still build with both gates OFF (the isolation gates). The
@@ -156,6 +166,11 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   label routes to `appendRun(Roman)` and is byte-identical to the old path (a `[math]` test pins
   it). Subset extension point: the macro table in `math_parse.cpp` (`symbolTable()`). The legend
   `fieldName` default is `"$f$"` (math italic); the caption tests expect `"|$f$|"`/`"arg($f$)"`.
+  **Rotated labels (ADR-0034):** `math::appendLabelRotated` lays a label out horizontally then calls
+  `MixedGlyphs::rotateSince` to rotate its glyph quads in PIXEL space (keeps `texcoord` fixed → Slug
+  outline unchanged, only placement rotates). It rotates **glyph quads only** — inline-math RULES
+  (`\frac`/`\overline` bars → `overlay.screenTriangles`) are NOT rotated, so a rotated label must not
+  contain them (the legend captions are bars + a symbol; fine).
 - **`glslc` is a required build tool** (ADR-0011/D-0022). Shaders in `shaders/`; SPIR-V
   embedded (regenerated each build). The colormap LUT is committed data
   (`include/iv/vk/colormap_lut.hpp`) — regenerate with `tools/gen_colormap.py` if it changes;
@@ -203,9 +218,10 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
 
 ## Pointers
 - Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M9 complete & locked).
-- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0033 Accepted** (0009 superseded by 0015;
-  0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020; 0031 amends 0028/0029).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0049), Backlog B-0001…B-0016.
+- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0034 Accepted** (0009 superseded by 0015;
+  0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020; 0031 amends 0028/0029; **0034 amends
+  0028 §(3)/0031** — legend placement + rotated magnitude caption, adds the rotated-label primitive).
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0050), Backlog B-0001…B-0016.
 - Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
   makePlot); `iv_bench` (perf).

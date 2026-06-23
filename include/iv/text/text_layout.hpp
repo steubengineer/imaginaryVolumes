@@ -63,6 +63,22 @@ public:
                      float pixelSize, std::uint32_t fbWidth, std::uint32_t fbHeight,
                      const std::array<float, 4>& color);
 
+    // A snapshot of the per-face quad-vertex counts, for rotateSince() (ADR-0034).
+    struct Marker {
+        std::array<std::size_t, kFaceCount> n{};
+    };
+    [[nodiscard]] Marker marker() const noexcept;
+
+    // Rotate (in the y-down PIXEL frame, about pivot (pivotXpx, pivotYpx)) every glyph-quad
+    // vertex appended since `from`, by `angleRad`. Recovers each vertex's pixel position from its
+    // NDC pos via the (fbWidth x fbHeight) half-extents, applies P' = O + R(angleRad)·(P − O)
+    // (R = [[c,−s],[s,c]]), and writes the NDC back; texcoord/glyphLoc/color are untouched, so the
+    // Slug outline is unchanged and only the on-screen placement rotates (ADR-0034). Used to emit a
+    // label rotated off its horizontal baseline (the legend magnitude caption). angleRad = 0 is a
+    // no-op.
+    void rotateSince(const Marker& from, float angleRad, float pivotXpx, float pivotYpx,
+                     std::uint32_t fbWidth, std::uint32_t fbHeight);
+
     // Merge the contributing faces (Roman, then Italic, then Math) into `overlay`: append
     // each used face's atlas to overlay.glyphAtlas at a running base, append this builder's
     // accumulated quads to overlay.glyphs with glyphLoc rebased by that base, then reset the

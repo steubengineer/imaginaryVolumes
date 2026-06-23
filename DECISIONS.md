@@ -10,6 +10,33 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0050 — Legend layout v2: aspect-aware placement + compact rotated magnitude caption (B-0013)
+- **Date / milestone:** 2026-06-22 / post-M9 (visual-polish pass) — maintainer-approved (ADR-0034)
+- **Choice:** Two B-0013 legend defects. (1) The fixed `LegendSpec::rectNdc` (screen NDC,
+  aspect-independent) is overrun by the box, which projects *with* the aspect correction — so a
+  taller-than-wide window magnifies the box in NDC-x into the legend. (2) The `|f|` magnitude
+  caption sits bulkily above the bar. Options weighed: bump the fixed rect / reserve a pixel panel
+  vs. project the box and place the legend right of it; thread a rotation through the whole math
+  layout vs. a post-emission pixel-space rotation of the emitted glyph quads.
+- **Decision (ADR-0034):** (1) **Aspect-aware placement** — `placeLegendRight` projects the 8 cube
+  corners with the live `viewProjection(camera, aspect)` and sets the swatch left edge to clear the
+  box's right NDC extent, clamped so it's a no-op in wide windows and never pushes the value labels
+  off-screen. Per-frame in `makePlot`, once in `renderPlot`. (2) **Compact caption** — draw `|f|`
+  rotated −π/2 (reading bottom-to-top), vertically centered just left of the swatch. (3) Enabled by
+  a **rotated-label primitive** in the text layer (`MixedGlyphs::rotateSince` + `appendLabelRotated`)
+  that lays a label out horizontally then rotates its quads in pixel space — keeping `texcoord`
+  fixed so the Slug outline is unchanged and only the screen placement rotates; glyph-quads only
+  (math *rules* unsupported in a rotated label — captions never use them).
+- **Rationale:** Only projecting the box tracks it across aspect ratios (the actual defect); a fixed
+  rect cannot. The post-emission rotation is localized (no change to the math/box layout) and works
+  for text + simple math alike. Rotated-left is the conventional, compact colorbar-title place.
+- **Contract impact:** **ADR-0034** (Accepted 2026-06-22; amends ADR-0028 §(3) / ADR-0031 caption
+  placement, supersedes neither). New `iv_text` surface only (`MixedGlyphs::Marker`/`marker()`/
+  `rotateSince`, `math::appendLabelRotated`, `text::placeLegendRight`); public core-`iv`
+  `LegendSpec`/`PlotOptions` unchanged.
+- **Deferred alternatives:** rotating math *rules* within a rotated label (generality, not needed);
+  the rest of B-0013 (label sizes) stays open.
+
 ### D-0049 — Axis-label placement: adaptive tick-band clearance + facade framing margin (B-0013)
 - **Date / milestone:** 2026-06-22 / post-M9 (visual-polish pass) — maintainer-directed
 - **Choice:** Fix the M9-observed defect where axis labels overlap the tick-value numbers ("y (nm)"

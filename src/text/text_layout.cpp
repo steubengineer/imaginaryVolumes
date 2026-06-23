@@ -1,6 +1,7 @@
 #include "iv/text/text_layout.hpp"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -111,6 +112,36 @@ void MixedGlyphs::appendGlyph(Face face, std::uint32_t glyphId, float penXpx, fl
     pushGlyphQuad(perFace_[static_cast<std::size_t>(face)], e, penXpx, penYpx, scale, pad,
                   e.atlasOffset, static_cast<float>(fbWidth) * 0.5f,
                   static_cast<float>(fbHeight) * 0.5f, color);
+}
+
+MixedGlyphs::Marker MixedGlyphs::marker() const noexcept {
+    Marker m;
+    for (std::size_t f = 0; f < kFaceCount; ++f) {
+        m.n[f] = perFace_[f].size();
+    }
+    return m;
+}
+
+void MixedGlyphs::rotateSince(const Marker& from, float angleRad, float pivotXpx, float pivotYpx,
+                              std::uint32_t fbWidth, std::uint32_t fbHeight) {
+    const float c = std::cos(angleRad);
+    const float s = std::sin(angleRad);
+    const float halfW = static_cast<float>(fbWidth) * 0.5f;
+    const float halfH = static_cast<float>(fbHeight) * 0.5f;
+    for (std::size_t f = 0; f < kFaceCount; ++f) {
+        auto& quads = perFace_[f];
+        for (std::size_t i = from.n[f]; i < quads.size(); ++i) {
+            auto& pos = quads[i].pos;
+            const float px = (pos[0] + 1.0f) * halfW; // NDC -> pixel (top-left origin)
+            const float py = (pos[1] + 1.0f) * halfH;
+            const float dx = px - pivotXpx;
+            const float dy = py - pivotYpx;
+            const float rx = c * dx - s * dy; // R(angleRad) in the y-down pixel frame
+            const float ry = s * dx + c * dy;
+            pos[0] = (pivotXpx + rx) / halfW - 1.0f;
+            pos[1] = (pivotYpx + ry) / halfH - 1.0f;
+        }
+    }
 }
 
 void MixedGlyphs::finish(iv::vk::Overlay& overlay) {

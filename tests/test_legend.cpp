@@ -10,14 +10,18 @@
 #include "iv/text/annotations.hpp"
 #include "iv/text/font_set.hpp"
 #include "iv/text/legend_builder.hpp"
+#include "iv/text/math_layout.hpp"
 #include "iv/text/text_layout.hpp"
 #include "iv/vk/context.hpp"
 #include "iv/vk/renderer.hpp"
+#include "iv/vk/view_projection.hpp"
 #include "iv/vk/volume.hpp"
 
 #include "catch_amalgamated.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <complex>
 #include <vector>
 
@@ -45,6 +49,33 @@ void frameG(iv::vk::Overlay& ov, const iv::PlotAxes& axes, const RenderParams& c
     iv::text::buildAnnotations(ov, g, axes, cam, W, H);
     iv::text::buildLegend(ov, g, spec, W, H);
     g.finish(ov);
+}
+
+// A 3/4 view framed like the facade does (D-0049: the cube at orbit distance ~3.3, vfov 0.6) so
+// the projected box extent matches a real plot (placeLegendRight is built for that framing).
+RenderParams cubeCamera() {
+    RenderParams p;
+    p.eye = {2.77f, 1.94f, 2.41f};
+    p.target = {0.5f, 0.5f, 0.5f};
+    p.up = {0.0f, 1.0f, 0.0f};
+    p.vfovRadians = 0.6f;
+    return p;
+}
+
+// The rightmost NDC-x of the projected unit cube (the reference placeLegendRight clears).
+float projectedBoxRight(const RenderParams& cam, std::uint32_t W, std::uint32_t H) {
+    const auto M = iv::vk::viewProjection(cam, static_cast<float>(W) / static_cast<float>(H));
+    const float halfW = static_cast<float>(W) * 0.5f;
+    float r = -2.0f;
+    for (int i = 0; i < 8; ++i) {
+        const std::array<float, 3> c{static_cast<float>(i & 1), static_cast<float>((i >> 1) & 1),
+                                     static_cast<float>((i >> 2) & 1)};
+        const auto px = iv::vk::projectToPixel(M, c, W, H);
+        if (px[2] > 0.0f) {
+            r = std::max(r, px[0] / halfW - 1.0f);
+        }
+    }
+    return r;
 }
 } // namespace
 
@@ -201,6 +232,151 @@ TEST_CASE("Legend: thickness correction boosts swatch opacity (ADR-0030)", "[leg
     };
     CHECK(maxAlpha(oo) <= 0.11f); // off: per-sample alpha capped at the density (0.1)
     CHECK(maxAlpha(ot) > 0.9f);   // thickness 0.5 accumulates the top toward opaque
+}
+
+// ADR-0034: rotated-label emission. A label laid out horizontally then rotated −π/2 about a pivot
+// maps each glyph-quad corner's pixel offset (dx,dy) -> (dy,−dx) (advance +x -> up), leaving the
+// Slug texcoord/atlas index untouched (only the on-screen placement rotates). angleRad = 0 is the
+// identity. teeth: wrong sign/axis (e.g. +π/2) or rotating the texcoord lands corners in the wrong
+// quadrant / corrupts the glyph; the identity check catches any spurious mutation at angle 0.
+TEST_CASE("MixedGlyphs::rotateSince rotates quads in pixel space, not the glyph (ADR-0034)",
+          "[legend][text]") {
+    auto fonts = FontSet::create(20.0f);
+    REQUIRE(fonts.has_value());
+    const std::uint32_t W = 200u, H = 200u; // square -> isotropic NDC<->pixel
+    const float halfW = static_cast<float>(W) * 0.5f, halfH = static_cast<float>(H) * 0.5f;
+    const float pivotX = 70.0f, pivotY = 100.0f;
+
+    const auto toPx = [&](const iv::vk::GlyphVertex& v) {
+        return std::array<float, 2>{(v.pos[0] + 1.0f) * halfW, (v.pos[1] + 1.0f) * halfH};
+    };
+
+    // Horizontal reference.
+    iv::vk::Overlay h;
+    {
+        MixedGlyphs g(*fonts);
+        g.appendRun(iv::text::Face::Roman, "L", pivotX, pivotY, W, H, {{1, 1, 1, 1}, 20.0f});
+        g.finish(h);
+    }
+    // Rotated −π/2 about the pivot.
+    iv::vk::Overlay r;
+    {
+        MixedGlyphs g(*fonts);
+        const auto m = g.marker();
+        g.appendRun(iv::text::Face::Roman, "L", pivotX, pivotY, W, H, {{1, 1, 1, 1}, 20.0f});
+        g.rotateSince(m, -1.57079632679f, pivotX, pivotY, W, H);
+        g.finish(r);
+    }
+    // Identity (angle 0) must reproduce the horizontal quads byte-for-byte.
+    iv::vk::Overlay id;
+    {
+        MixedGlyphs g(*fonts);
+        const auto m = g.marker();
+        g.appendRun(iv::text::Face::Roman, "L", pivotX, pivotY, W, H, {{1, 1, 1, 1}, 20.0f});
+        g.rotateSince(m, 0.0f, pivotX, pivotY, W, H);
+        g.finish(id);
+    }
+
+    REQUIRE_FALSE(h.glyphs.empty());
+    REQUIRE(h.glyphs.size() == r.glyphs.size());
+    REQUIRE(h.glyphs.size() == id.glyphs.size());
+    for (std::size_t i = 0; i < h.glyphs.size(); ++i) {
+        const auto ph = toPx(h.glyphs[i]);
+        const auto pr = toPx(r.glyphs[i]);
+        const float dx = ph[0] - pivotX, dy = ph[1] - pivotY;
+        CHECK(pr[0] - pivotX == Catch::Approx(dy).margin(1e-3));  // (dx,dy) -> (dy,−dx)
+        CHECK(pr[1] - pivotY == Catch::Approx(-dx).margin(1e-3));
+        CHECK(r.glyphs[i].texcoord[0] == h.glyphs[i].texcoord[0]); // glyph outline untouched
+        CHECK(r.glyphs[i].texcoord[1] == h.glyphs[i].texcoord[1]);
+        CHECK(r.glyphs[i].glyphLoc == h.glyphs[i].glyphLoc);
+        CHECK(id.glyphs[i].pos[0] == Catch::Approx(h.glyphs[i].pos[0])); // angle 0 == identity
+        CHECK(id.glyphs[i].pos[1] == Catch::Approx(h.glyphs[i].pos[1]));
+    }
+}
+
+// ADR-0034: the magnitude caption sits rotated to the LEFT of the swatch, vertically centered —
+// not horizontally centered above it. teeth: the old "centered above" placement put the caption
+// above rectNdc.top and centered in x, so NO caption glyph is in the swatch's vertical mid-band and
+// left of its left edge -> the existence check goes red.
+TEST_CASE("Legend: magnitude caption is rotated to the left of the swatch (ADR-0034)", "[legend]") {
+    auto fonts = FontSet::create(16.0f);
+    REQUIRE(fonts.has_value());
+
+    iv::LegendSpec spec; // default fieldName "$f$" -> caption "|$f$|"
+    spec.range = {0.01f, 1.0f};
+    spec.rectNdc = {0.60f, -0.45f, 0.84f, 0.45f}; // explicit default (don't depend on placement)
+
+    iv::vk::Overlay ov;
+    legendG(ov, spec, 256u, 256u, *fonts);
+    REQUIRE_FALSE(ov.glyphs.empty());
+
+    const float left = spec.rectNdc[0];
+    const float midY = 0.5f * (spec.rectNdc[1] + spec.rectNdc[3]); // swatch vertical center (NDC)
+    const float band = 0.12f; // central band; the caption straddles the mid, the −π/0/π row is below
+
+    int captionGlyphs = 0;
+    for (const auto& v : ov.glyphs) {
+        if (v.pos[0] < left - 0.005f && std::abs(v.pos[1] - midY) < band) {
+            ++captionGlyphs;
+        }
+    }
+    CHECK(captionGlyphs > 0); // the rotated |f| caption — the only label left of the mid-band swatch
+}
+
+// ADR-0034: placeLegendRight tracks the projected box — pushing the swatch right (by the box's
+// right extent + a caption/gap allowance) so it does not collide — while never moving left of the
+// default and keeping the right-edge value labels on screen. A wide window (narrow box) is the
+// unchanged default. Constants below mirror legend_builder.cpp (px gaps -> NDC via halfW).
+TEST_CASE("Legend: placeLegendRight clears the box, aspect-aware (ADR-0034)", "[legend]") {
+    const RenderParams cam = cubeCamera();
+
+    const auto place = [&](std::array<float, 4> rect, std::uint32_t W, std::uint32_t H) {
+        iv::LegendSpec s;
+        s.rectNdc = rect;
+        iv::text::placeLegendRight(s, cam, W, H);
+        return s.rectNdc;
+    };
+
+    const std::array<float, 4> def{0.60f, -0.45f, 0.84f, 0.45f};
+    const float width = def[2] - def[0];
+
+    SECTION("square/tall window (wide box): pushed to the on-screen limit, clearing the default") {
+        const std::uint32_t W = 900u, H = 900u; // the box's right corner overruns the default left
+        const float halfW = static_cast<float>(W) * 0.5f;
+        const float valAllow = 46.0f / halfW;
+        const float boxRight = projectedBoxRight(cam, W, H);
+        const float hi = 0.98f - valAllow - width; // the rightmost on-screen swatch left
+        CAPTURE(boxRight, hi);
+        REQUIRE(boxRight > def[0]);  // the box really would overlap the default panel here...
+        REQUIRE(hi > def[0]);        // ...and there is room to push right of it
+
+        const auto r = place(def, W, H);
+        CHECK(r[0] > def[0]);                        // pushed right (teeth: ignore-box stays default)
+        CHECK(r[0] == Catch::Approx(hi));            // as far right as keeps value labels on screen
+        CHECK(r[2] + valAllow <= 0.98f + 1e-4f);     // value labels on screen (teeth: no right clamp)
+        CHECK(r[2] - r[0] == Catch::Approx(width));  // width preserved
+        CHECK(r[1] == def[1]);                       // vertical extent unchanged
+        CHECK(r[3] == def[3]);
+    }
+    SECTION("wide window (narrow box): the unchanged default") {
+        const std::uint32_t W = 1400u, H = 480u;
+        const float halfW = static_cast<float>(W) * 0.5f;
+        const float boxRight = projectedBoxRight(cam, W, H);
+        CAPTURE(boxRight);
+        REQUIRE(boxRight + (18.0f + 30.0f) / halfW < def[0]); // box clears the default already
+        const auto r = place(def, W, H);
+        CHECK(r[0] == Catch::Approx(def[0])); // no-op (teeth: an always-push build would move it)
+        CHECK(r[2] == Catch::Approx(def[2]));
+    }
+    SECTION("never moves the swatch left of the default (all aspects)") {
+        for (const auto wh : {std::array<std::uint32_t, 2>{600, 1000},
+                              std::array<std::uint32_t, 2>{900, 900},
+                              std::array<std::uint32_t, 2>{1400, 600}}) {
+            const auto r = place(def, wh[0], wh[1]);
+            CAPTURE(wh[0], wh[1], r[0]);
+            CHECK(r[0] >= def[0] - 1e-5f); // extreme portrait keeps the default, never worsens it
+        }
+    }
 }
 
 TEST_CASE("Legend: swatch renders phase color across and opacity up (ADR-0028)", "[vk][legend]") {

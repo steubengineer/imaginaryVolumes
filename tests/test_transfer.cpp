@@ -9,6 +9,8 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 using iv::MagnitudeRange;
 
@@ -25,11 +27,45 @@ bool near3(const std::array<float, 3>& got, const std::array<float, 3>& want, fl
 
 TEST_CASE("phaseColor cyclic seam (-pi == +pi)", "[transfer]") {
     // The seam is the defining cyclic property (ADR-0014). A non-wrapping normalization
-    // would split it; this is the teeth for the repeat/wrap.
-    REQUIRE(near3(iv::phaseColor(-kPi, 0), iv::phaseColor(kPi, 0)));
-    REQUIRE(near3(iv::phaseColor(-kPi, 1), iv::phaseColor(kPi, 1)));
+    // would split it; this is the teeth for the repeat/wrap. Every map is cyclic (ADR-0036).
+    for (std::uint32_t mode = 0u; mode < 4u; ++mode) {
+        REQUIRE(near3(iv::phaseColor(-kPi, mode), iv::phaseColor(kPi, mode)));
+    }
     // ... and full periodicity: theta and theta + 2pi agree.
     REQUIRE(near3(iv::phaseColor(0.3f, 0), iv::phaseColor(0.3f + 2.0f * kPi, 0), 2e-3f));
+}
+
+TEST_CASE("phaseColor mode 3 grayscale anchors (ADR-0036)", "[transfer]") {
+    // grayscale is black -> white -> black, cyclic (r==g==b everywhere). theta=0 (t=0.5) is the
+    // white peak; the seam (theta=+-pi) is black. Teeth: a wrong layer / a colour map here fails.
+    const auto mid = iv::phaseColor(0.0f, 3);
+    CHECK(mid[0] > 0.95f);
+    CHECK(std::abs(mid[0] - mid[1]) < 1e-3f); // truly grey (no hue)
+    CHECK(std::abs(mid[1] - mid[2]) < 1e-3f);
+    const auto seam = iv::phaseColor(kPi, 3);
+    CHECK(seam[0] < 0.03f);
+    CHECK(seam[1] < 0.03f);
+    CHECK(seam[2] < 0.03f);
+}
+
+TEST_CASE("phaseColor mode 2 infinity ties to its committed source seam (ADR-0036)", "[transfer]") {
+    // infinity's seam colour (CSV row 0 == row 255) is this purple; the map is sampled at texel
+    // centres so the seam value is within a texel of the source. Teeth: a wrong layer/source moves
+    // it far off (e.g. twilight's seam is a different purple; HSV is saturated).
+    REQUIRE(near3(iv::phaseColor(-kPi, 2), {0.34562389f, 0.02586483f, 0.44469337f}, 0.02f));
+}
+
+TEST_CASE("phaseColor selector: the four modes differ at a fixed phase (ADR-0036)", "[transfer]") {
+    // Each colormapMode routes to a distinct map; at a generic phase no two coincide. A broken
+    // selector (e.g. all modes -> twilight) would collapse these.
+    const float th = 0.6f;
+    const std::array<std::array<float, 3>, 4> c{iv::phaseColor(th, 0), iv::phaseColor(th, 1),
+                                                iv::phaseColor(th, 2), iv::phaseColor(th, 3)};
+    for (std::size_t i = 0; i < c.size(); ++i) {
+        for (std::size_t j = i + 1; j < c.size(); ++j) {
+            CHECK_FALSE(near3(c[i], c[j], 0.02f)); // distinct maps -> distinct colours
+        }
+    }
 }
 
 TEST_CASE("phaseColor mode 0 ties to the committed twilight LUT", "[transfer]") {

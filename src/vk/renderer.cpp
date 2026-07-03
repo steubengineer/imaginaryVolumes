@@ -264,14 +264,14 @@ Result<Renderer> Renderer::create(const Context& ctx) {
             Unique<vkh::Sampler>(*m, [device](vkh::Sampler h) { device.destroySampler(h); });
     }
 
-    // --- Colormap LUT: 1D RGBA8, uploaded once (ADR-0014) ---
+    // --- Colormap LUTs: a 1D RGBA8 array, one layer per baked map, uploaded once (ADR-0014/0036) ---
     {
         auto m = take(device.createImage(vkh::ImageCreateInfo{}
                                              .setImageType(vkh::ImageType::e1D)
                                              .setFormat(kOutputFormat)
                                              .setExtent(vkh::Extent3D{kColormapLutSize, 1u, 1u})
                                              .setMipLevels(1u)
-                                             .setArrayLayers(1u)
+                                             .setArrayLayers(kColormapLutCount)
                                              .setSamples(vkh::SampleCountFlagBits::e1)
                                              .setTiling(vkh::ImageTiling::eOptimal)
                                              .setUsage(vkh::ImageUsageFlagBits::eSampled
@@ -292,8 +292,8 @@ Result<Renderer> Renderer::create(const Context& ctx) {
         r.lutMemory_ = *std::move(mem);
     }
     {
-        // Upload the LUT via a host-visible staging buffer.
-        const vkh::DeviceSize lutBytes = sizeof(kTwilightLut);
+        // Upload all LUT layers via a host-visible staging buffer (layers packed consecutively).
+        const vkh::DeviceSize lutBytes = sizeof(kColormapLuts);
         Unique<vkh::Buffer> staging;
         Unique<vkh::DeviceMemory> stagingMem;
         {
@@ -322,19 +322,25 @@ Result<Renderer> Renderer::create(const Context& ctx) {
             if (!mapped) {
                 return std::unexpected(std::move(mapped).error());
             }
-            std::memcpy(*mapped, kTwilightLut, static_cast<std::size_t>(lutBytes));
+            std::memcpy(*mapped, kColormapLuts, static_cast<std::size_t>(lutBytes));
             device.unmapMemory(stagingMem.get());
         }
         const vkh::Image lut = r.lutImage_.get();
         const vkh::Buffer buf = staging.get();
-        const auto region = vkh::BufferImageCopy{}
-                                .setBufferOffset(0)
-                                .setBufferRowLength(0u)
-                                .setBufferImageHeight(0u)
-                                .setImageSubresource(vkh::ImageSubresourceLayers{
-                                    vkh::ImageAspectFlagBits::eColor, 0u, 0u, 1u})
-                                .setImageOffset(vkh::Offset3D{0, 0, 0})
-                                .setImageExtent(vkh::Extent3D{kColormapLutSize, 1u, 1u});
+        // One copy region per array layer; layer k's data is at buffer offset k * (256 RGBA8).
+        constexpr vkh::DeviceSize kLayerBytes = kColormapLutSize * 4u;
+        std::array<vkh::BufferImageCopy, kColormapLutCount> regions{};
+        for (std::uint32_t layer = 0; layer < kColormapLutCount; ++layer) {
+            regions[layer] =
+                vkh::BufferImageCopy{}
+                    .setBufferOffset(layer * kLayerBytes)
+                    .setBufferRowLength(0u)
+                    .setBufferImageHeight(0u)
+                    .setImageSubresource(vkh::ImageSubresourceLayers{
+                        vkh::ImageAspectFlagBits::eColor, 0u, layer, 1u})
+                    .setImageOffset(vkh::Offset3D{0, 0, 0})
+                    .setImageExtent(vkh::Extent3D{kColormapLutSize, 1u, 1u});
+        }
         if (auto s = submitOneShot(
                 device, r.queue_, r.commandPool_,
                 [&](vkh::CommandBuffer cmd) {
@@ -345,8 +351,8 @@ Result<Renderer> Renderer::create(const Context& ctx) {
                         imageBarrier(lut, vkh::ImageLayout::eUndefined,
                                      vkh::ImageLayout::eTransferDstOptimal,
                                      vkh::AccessFlagBits::eNone,
-                                     vkh::AccessFlagBits::eTransferWrite));
-                    cmd.copyBufferToImage(buf, lut, vkh::ImageLayout::eTransferDstOptimal, region);
+                                     vkh::AccessFlagBits::eTransferWrite, kColormapLutCount));
+                    cmd.copyBufferToImage(buf, lut, vkh::ImageLayout::eTransferDstOptimal, regions);
                     cmd.pipelineBarrier(
                         vkh::PipelineStageFlagBits::eTransfer,
                         vkh::PipelineStageFlagBits::eFragmentShader, vkh::DependencyFlags{}, nullptr,
@@ -354,7 +360,7 @@ Result<Renderer> Renderer::create(const Context& ctx) {
                         imageBarrier(lut, vkh::ImageLayout::eTransferDstOptimal,
                                      vkh::ImageLayout::eShaderReadOnlyOptimal,
                                      vkh::AccessFlagBits::eTransferWrite,
-                                     vkh::AccessFlagBits::eShaderRead));
+                                     vkh::AccessFlagBits::eShaderRead, kColormapLutCount));
                 });
             !s) {
             return std::unexpected(std::move(s).error());
@@ -364,10 +370,10 @@ Result<Renderer> Renderer::create(const Context& ctx) {
         auto m = take(device.createImageView(
                           vkh::ImageViewCreateInfo{}
                               .setImage(r.lutImage_.get())
-                              .setViewType(vkh::ImageViewType::e1D)
+                              .setViewType(vkh::ImageViewType::e1DArray)
                               .setFormat(kOutputFormat)
                               .setSubresourceRange(vkh::ImageSubresourceRange{
-                                  vkh::ImageAspectFlagBits::eColor, 0u, 1u, 0u, 1u})),
+                                  vkh::ImageAspectFlagBits::eColor, 0u, 1u, 0u, kColormapLutCount})),
                       "createImageView(colormap)");
         if (!m) {
             return std::unexpected(std::move(m).error());

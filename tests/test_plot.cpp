@@ -92,9 +92,17 @@ TEST_CASE("renderPlot: the legend matches the render (single-source transfer)", 
     };
     const auto isCyan = [](const auto& p) { return p.r < 45 && p.g > 200 && p.b > 200; };
 
-    // Legend swatch at phase 0 (u=0.5 -> x = mid of the default rect [0.60,0.84] = 0.72), near
-    // the top (opaque).
-    const auto legendPx = img->at(px(0.72f), py(-0.40f));
+    // The legend swatch's phase-0 column reads HSV cyan. placeLegendRight positions the swatch
+    // aspect-dependently (ADR-0034; B-0016 slides it to keep value labels on screen), so scan the
+    // legend region (right of center) along a row near the swatch top for the most-cyan pixel rather
+    // than assuming a fixed column. The border/labels are near-white (high R) and are not picked.
+    iv::vk::ImageReadback::Rgba legendPx{255, 0, 0, 255};
+    for (std::uint32_t x = px(0.20f); x < W; ++x) {
+        const auto c = img->at(x, py(-0.40f));
+        if (c.g > 200 && c.b > 200 && c.r < legendPx.r) {
+            legendPx = c; // the least-red cyan in the swatch's phase-0 column
+        }
+    }
 
     // A volume pixel: the uniform phase-0 cube reads HSV cyan. The facade frames the plot into the
     // left ~75% (ADR-0035 image shift), so scan the left half along the vertical center and take the

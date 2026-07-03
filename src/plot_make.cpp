@@ -100,7 +100,9 @@ Result<iv::vk::Viewer> makePlotImpl(std::span<const std::complex<T>> field, Grid
             ls.fieldName = state->fieldName;              // ADR-0031
             ls.magnitudeLabel = state->magnitudeLabel;
             ls.phaseLabel = state->phaseLabel;
-            iv::text::placeLegendRight(ls, cam, w, h);   // clear the box, live aspect (ADR-0034)
+            // Reserve room for the actual (possibly wide, B-0016 sci) value labels so none clip.
+            iv::text::placeLegendRight(ls, cam, w, h,
+                                       iv::text::magnitudeValueReservePx(ls, glyphs));
             iv::text::buildLegend(ov, glyphs, ls, w, h); // appends the screen legend
         }
         glyphs.finish(ov); // merge the glyph atlases into the overlay

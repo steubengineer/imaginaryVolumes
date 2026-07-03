@@ -27,10 +27,11 @@ inline constexpr float kReferenceSteps = 256.0f;
 // volume's "thickness" effect (ADR-0030); result is finite and clamped to [0,1].
 [[nodiscard]] float accumulatedOpacity(float perSampleAlpha, float thickness) noexcept;
 
-// arg(z) -> RGB (ADR-0014), mirroring ray_march.comp::sampleColor. `phaseRadians` is the
+// arg(z) -> RGB (ADR-0014/0036), mirroring ray_march.comp::sampleColor. `phaseRadians` is the
 // phase in [-pi, pi]; values outside wrap cyclically (t = (phase+pi)/(2pi), periodic).
-// colormapMode 0 samples the committed twilight LUT with linear interpolation + repeat wrap
-// (the same data and rule as the GPU sampler1D); mode 1 is the analytic HSV hue wheel.
+// colormapMode selects a cyclic map: 0 = twilight, 2 = infinity, 3 = grayscale (each a committed
+// 256-entry LUT sampled with linear interpolation + repeat wrap, the SAME data and rule as the GPU
+// sampler1DArray layer); 1 = the analytic HSV hue wheel. Out-of-range modes fall back to twilight.
 // Result is non-premultiplied rgb in [0,1]. phaseColor(-pi) == phaseColor(+pi) (the seam).
 [[nodiscard]] std::array<float, 3> phaseColor(float phaseRadians,
                                               std::uint32_t colormapMode) noexcept;

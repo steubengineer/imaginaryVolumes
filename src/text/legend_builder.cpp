@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace iv::text {
@@ -38,7 +39,9 @@ constexpr float kLegendLabelScale = 1.3f; // legend labels relative to the tick 
 // placeLegendRight tunables (px; converted to NDC via halfW so gaps are aspect-consistent, ADR-0034).
 constexpr float kBoxGapPx = 18.0f;      // gap between the box's right extent and the caption
 constexpr float kCapAllowPx = 30.0f;    // horizontal room for the rotated caption left of the swatch
-constexpr float kValAllowPx = 46.0f;    // room for the right-edge magnitude value labels
+constexpr float kTickReservePx = 10.0f; // tick stub + a hair of margin, added to the measured label
+                                        // width for the value-label reserve (B-0016). The fixed
+                                        // fallback reserve is placeLegendRight's default arg (46 px).
 constexpr float kRightEdgeNdc = 0.98f;  // keep the whole legend left of this NDC-x
 
 void sv(std::vector<OverlayVertex>& out, float x, float y, const Color& c) {
@@ -72,12 +75,79 @@ void leftLabel(Overlay& ov, MixedGlyphs& g, std::string_view s, float x, float c
     iv::text::math::appendLabel(g, ov, s, x, cy + 0.34f * size, fbW, fbH, size, kLabelColor);
 }
 
-// Label for a power-of-ten magnitude tick (log mode): "1" for 10^0, else "1e<exp>".
-std::string decadeLabel(int e) {
-    return e == 0 ? std::string("1") : "1e" + std::to_string(e);
+// Whether a linear magnitude axis with maximum `axisMax` should use scientific (mantissa×10^exp)
+// tick labels: only very small or very large ranges, so ordinary ranges keep plain decimals and we
+// never render "1.2×10⁰". Threshold per B-0016 (maintainer 2026-07-03).
+bool linearUsesSci(double axisMax) {
+    const double a = std::abs(axisMax);
+    return a > 0.0 && (a < 1e-2 || a >= 1e4);
+}
+
+// The magnitude-axis ticks buildLegend draws for `spec`: (value, label) in draw order. Linear mode
+// -> nice numbers over [0, max] (ADR-0024 ticksFor), scientific for extreme ranges (B-0016); log
+// mode -> decade ticks over the active window (ADR-0027). Shared by buildLegend (emission) and
+// magnitudeValueReservePx (measuring the labels to reserve their horizontal room). decadeTickLabel /
+// linearTickLabel are the public formatters declared in the header.
+std::vector<std::pair<double, std::string>> magnitudeTicks(const iv::LegendSpec& spec) {
+    std::vector<std::pair<double, std::string>> out;
+    const double maxM = static_cast<double>(spec.range.max);
+    if (spec.opacityMode == 0u) { // linear: nice numbers over [0, max]
+        const iv::AxisTicks mt = iv::ticksFor(0.0, maxM, iv::kDefaultMajor, 1);
+        for (const double mv : mt.major) {
+            out.emplace_back(mv, linearTickLabel(mv, mt.step, maxM));
+        }
+    } else { // log: decade ticks over the active window [lo, max]
+        const double lo = (spec.logDecades > 0.0f)
+                              ? maxM * std::pow(10.0, -static_cast<double>(spec.logDecades))
+                              : static_cast<double>(spec.range.minPositive);
+        if (lo > 0.0 && maxM > lo) {
+            const int e0 = static_cast<int>(std::ceil(std::log10(lo)));
+            const int e1 = static_cast<int>(std::floor(std::log10(maxM)));
+            const int de = std::max(1, (e1 - e0) / 10); // thin to <= ~11 ticks for huge ranges
+            for (int e = e0; e <= e1; e += de) {
+                out.emplace_back(std::pow(10.0, e), decadeTickLabel(e));
+            }
+        }
+    }
+    return out;
 }
 
 } // namespace
+
+// --- B-0016 magnitude tick-label formatting (see legend_builder.hpp) -------------------------
+
+std::string decadeTickLabel(int exponent) {
+    return exponent == 0 ? std::string("1") : "$10^{" + std::to_string(exponent) + "}$";
+}
+
+std::string linearTickLabel(double value, double step, double axisMax) {
+    if (!linearUsesSci(axisMax)) {
+        return iv::formatTick(value, step); // ordinary range: plain decimal
+    }
+    if (value == 0.0) {
+        return std::string("0"); // zero has no exponent
+    }
+    // Shared exponent across the whole axis (derived from axisMax, identical for every tick), so the
+    // mantissas read against one power of ten (4×10⁻³, 2×10⁻³) rather than each tick floating its own.
+    const int exp = static_cast<int>(std::floor(std::log10(std::abs(axisMax))));
+    const double scale = std::pow(10.0, exp);
+    const std::string mant = iv::formatTick(value / scale, step / scale);
+    return "$" + mant + "\\times10^{" + std::to_string(exp) + "}$";
+}
+
+float magnitudeValueReservePx(const iv::LegendSpec& spec, MixedGlyphs& glyphs) {
+    // Value labels draw at the base tick size (buildLegend: emitMagTick uses baseSize). Reserve the
+    // widest actual label + the tick stub + the swatch->label gap, so placeLegendRight keeps the
+    // whole label on screen — the sci-notation labels (B-0016) are wider than the old decimals, so a
+    // fixed guess under-reserved and clipped the exponent.
+    const float size = glyphs.fonts().pixelSize();
+    float widest = 0.0f;
+    for (const auto& [mv, label] : magnitudeTicks(spec)) {
+        (void)mv;
+        widest = std::max(widest, iv::text::math::measureLabel(glyphs.fonts(), label, size));
+    }
+    return widest + kMagLabelPadPx + kTickReservePx;
+}
 
 void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::uint32_t fbW,
                  std::uint32_t fbH) {
@@ -165,24 +235,8 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
         // captions/L stay at labelSize.
         leftLabel(ov, g, label, pxX(xR + kTickLenNdc) + kMagLabelPadPx, pxY(y), fbW, fbH, baseSize);
     };
-    const double maxM = static_cast<double>(spec.range.max);
-    if (spec.opacityMode == 0u) { // linear: nice numbers over [0, max]
-        const iv::AxisTicks mt = iv::ticksFor(0.0, maxM, iv::kDefaultMajor, 1);
-        for (const double mv : mt.major) {
-            emitMagTick(mv, iv::formatTick(mv, mt.step));
-        }
-    } else { // log: decade ticks over the active window
-        const double lo = (spec.logDecades > 0.0f)
-                              ? maxM * std::pow(10.0, -static_cast<double>(spec.logDecades))
-                              : static_cast<double>(spec.range.minPositive);
-        if (lo > 0.0 && maxM > lo) {
-            const int e0 = static_cast<int>(std::ceil(std::log10(lo)));
-            const int e1 = static_cast<int>(std::floor(std::log10(maxM)));
-            const int de = std::max(1, (e1 - e0) / 10); // thin to <= ~11 ticks for huge ranges
-            for (int e = e0; e <= e1; e += de) {
-                emitMagTick(std::pow(10.0, e), decadeLabel(e));
-            }
-        }
+    for (const auto& [mv, label] : magnitudeTicks(spec)) { // labels are inline-math sci form (B-0016)
+        emitMagTick(mv, label);
     }
     // Magnitude caption: rotated a quarter-turn CCW (reads bottom-to-top), vertically centered just
     // left of the swatch — compact, the conventional colorbar-title place (ADR-0034). The pivot is
@@ -210,7 +264,7 @@ void buildLegend(Overlay& ov, MixedGlyphs& g, const iv::LegendSpec& spec, std::u
 }
 
 void placeLegendRight(iv::LegendSpec& spec, const iv::vk::RenderParams& camera, std::uint32_t fbW,
-                      std::uint32_t fbH) {
+                      std::uint32_t fbH, float valueReservePx) {
     if (fbW == 0u || fbH == 0u) {
         return;
     }
@@ -239,17 +293,21 @@ void placeLegendRight(iv::LegendSpec& spec, const iv::vk::RenderParams& camera, 
     const float defaultLeft = spec.rectNdc[0];
     const float gap = kBoxGapPx / halfW;       // px -> NDC (aspect-consistent)
     const float capAllow = kCapAllowPx / halfW;
-    const float valAllow = kValAllowPx / halfW;
+    const float valAllow = valueReservePx / halfW; // measured room for the right-edge value labels
 
-    // Just right of the box (+ room for the left caption); but never left of the default (so wide
-    // windows are unchanged) and never so far right that the value labels leave the screen. In
-    // extreme portrait the box-clearance target and the on-screen cap (hi) conflict (hi < lo): we
-    // keep the default rather than move left into the box (which would only worsen the overlap).
-    const float lo = defaultLeft;
+    // `boxClear` is the leftmost swatch position that clears the box (+ the rotated caption to its
+    // left); `hi` is the rightmost that keeps the widest value label on screen (measured, B-0016).
+    // When the labels fit at/right-of the default (hi >= default) keep the established behavior: sit
+    // at the default, or push right to clear the box but never so far that a value label leaves the
+    // screen (labels win over full box clearance — partial box overlap is accepted, as before). When
+    // they do NOT fit at the default (hi < default: a narrow window or a wide sci label), slide left
+    // to `hi` so the label stays on screen — but never left of `boxClear`, so the swatch (and its
+    // caption) never moves INTO the box; if clearing the box and fitting the label conflict (the box
+    // fills a portrait frame) clearing the box wins and the label clips at the right edge.
+    const float boxClear = boxRight + gap + capAllow;
     const float hi = kRightEdgeNdc - valAllow - width;
-    float left = std::max(boxRight + gap + capAllow, lo); // ≥ default, pushed to clear the box
-    left = std::min(left, hi);                            // keep the value labels on screen
-    left = std::max(left, lo);                            // never left of default (extreme portrait)
+    const float lo = defaultLeft;
+    const float left = (hi >= lo) ? std::clamp(boxClear, lo, hi) : std::max(hi, boxClear);
     spec.rectNdc[0] = left;
     spec.rectNdc[2] = left + width;
 }

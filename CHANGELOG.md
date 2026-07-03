@@ -4,6 +4,60 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M9 — Additive cyclic colormaps: `infinity` + `grayscale` (B-0017, ADR-0036, D-0053)
+
+Add two maintainer-authored cyclic phase colormaps as selectable modes, **additive** (twilight/HSV
+unchanged): `colormapMode 2 = infinity`, `3 = grayscale` (`kColormapModeCount = 4`). Amends ADR-0014.
+- **Layered LUT.** The single `sampler1D uColormap` (binding 3) becomes a **`sampler1DArray`**, one
+  layer per baked LUT (0 twilight, 1 infinity, 2 grayscale; HSV stays analytic at mode 1). The shader
+  maps `mode → layer` (`0→0, 2→1, 3→2`), keeping linear + REPEAT on the 1-D coord (no cross-map bleed).
+  The renderer uploads all layers in one staged copy (per-layer regions) into an `e1DArray` image;
+  `imageBarrier` gained a defaulted `layerCount`.
+- **Committed data + generator.** `include/iv/vk/colormap_lut.hpp` is now a table
+  (`kColormapLuts[3][256*4]` + `kColormapLutNames` + `kColormapLutCount`/`kColormapModeCount`).
+  `tools/gen_colormap.py` bakes twilight (matplotlib) + each `tools/colormaps/*.csv`, resampling every
+  map to texel centers `(i+0.5)/256` as a cyclic piecewise-linear map (folding the CSV's duplicated seam
+  row), and gained a `--check` mode (CI-style staleness gate).
+- **Host mirror + viewer.** `iv::phaseColor` selects the matching LUT layer (host↔GPU sample identical
+  committed data, so the legend can't drift). The viewer's `C` key now **cycles** all four modes.
+
+**Teeth:** the `[vk][renderer]` "host `phaseColor` matches the GPU colormap" cross-check now runs for
+**every** mode (0..3) — the LUT modes exercise each array layer + the host/GPU layer map; fault-injected
+red→green by forcing the GPU layer to 0 (modes 2/3 then render twilight and diverge). New `[transfer]`
+teeth: seam continuity for all modes, grayscale anchors (mid ≈ white, ends ≈ black, r==g==b), infinity's
+seam tied to its committed source colour, and a 4-way selector (distinct maps → distinct colours).
+`gen_colormap.py --check` guards the committed LUTs against the source CSVs. **Verified by eye**: both
+maps render smoothly (continuous seams) in the volume and the legend swatch across all four modes. Full
+suite **1498/111**; ASan+UBSan **2/2**; GLFW-free + text-free isolation builds OK; `iv_view`
+validation-CLEAN.
+
+## Post-M9 — Legend magnitude axis in scientific notation (B-0016, D-0052)
+
+Promote the legend's auto-generated **magnitude-axis tick labels** to inline `$…$` math so the M9
+engine (ADR-0033) typesets true superscript exponents instead of ASCII `1e-3` (no contract change —
+journaled presentation; the generated labels were outside ADR-0033's caller-label scope).
+- **Formatting (public pure helpers `decadeTickLabel` / `linearTickLabel`).** Log **decade** ticks →
+  a pure power `$10^{e}$` (mantissa always 1, elided). Linear ticks stay **plain decimals** except
+  very small/large ranges (`|max| < 1e-2` or `>= 1e4`), which use a **shared exponent**
+  `$m\times10^{exp}$` (exp = `floor(log10|max|)`) so ticks read `4×10⁻³ / 2×10⁻³` against one power of
+  ten; zero stays `0`. (maintainer format choices, 2026-07-03.)
+- **Content-aware placement (the labels are wider than the old decimals).** A headless render showed
+  the wide `4×10⁻³` exponent clipping off the frame — the fixed right-edge reserve was sized for
+  `0.004`-style labels. Now the facade measures the actual widest label (`magnitudeValueReservePx`,
+  sharing one `magnitudeTicks(spec)` generator with `buildLegend`) and passes it to
+  `placeLegendRight(…, valueReservePx)`; the placement clamp is refined so the swatch **slides left**
+  to keep a wide label on screen, but **never into the box** (portrait where clearing the box and
+  fitting the label conflict clips the value labels — a narrow corner: only wide sci labels; log and
+  ordinary-linear labels fit at every aspect).
+
+**Teeth:** `[legend]` "magnitude tick labels use inline-math scientific notation" and "value-label
+reserve grows for wide sci labels" (both fault-injected red→green against the old `1e-3` / fixed
+reserve); `[legend]` "wide labels slide the swatch left … but never into the box" (fault-injected
+against the old pin-to-default); the `[vk][plot]` legend-matches-render sample made position-robust
+(scans the swatch's phase-0 column instead of a fixed x). Verified by eye across tall/square/wide
+aspects (superscripts render; exponent no longer clips in square/wide). Full suite **1433/108**;
+ASan+UBSan **2/2**; GLFW-free + text-free isolation builds OK; `iv_view` validation-CLEAN.
+
 ## Post-M9 — Visual polish: legend label size + title spacing (B-0013)
 
 Two maintainer presentation tweaks (no contract; pure constants/plumbing):

@@ -1,7 +1,8 @@
 #include "iv/vk/viewer.hpp"
 
 #include "iv/assert.hpp"
-#include "iv/vk/commands.hpp" // imageBarrier
+#include "iv/vk/colormap_lut.hpp" // kColormapModeCount (ADR-0036)
+#include "iv/vk/commands.hpp"     // imageBarrier
 #include "iv/vk/result.hpp"
 
 // vulkan.hpp (via the headers above) defines VK_VERSION_1_0 before GLFW is
@@ -165,9 +166,9 @@ void Viewer::Impl::onKey(GLFWwindow* w, int key, int /*scancode*/, int action, i
             im->params.opacityMode ^= 1u;
         }
         break;
-    case GLFW_KEY_C: // toggle LUT/HSV colormap (ADR-0014)
+    case GLFW_KEY_C: // cycle colormap: twilight -> HSV -> infinity -> grayscale (ADR-0014/0036)
         if (!repeat) {
-            im->params.colormapMode ^= 1u;
+            im->params.colormapMode = (im->params.colormapMode + 1u) % iv::vk::kColormapModeCount;
         }
         break;
     case GLFW_KEY_R: // reset camera (ADR-0018)

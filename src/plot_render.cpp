@@ -109,7 +109,9 @@ Result<iv::vk::ImageReadback> renderPlotImpl(std::span<const std::complex<T>> fi
     iv::text::buildAnnotations(ov, glyphs, options.axes, p, width, height);
     if (options.showLegend) {
         iv::LegendSpec ls = legendFor(options, vol->magnitudeRange());
-        iv::text::placeLegendRight(ls, p, width, height); // clear the box, aspect-aware (ADR-0034)
+        // Reserve room for the actual (possibly wide, B-0016 sci) value labels so none clip.
+        iv::text::placeLegendRight(ls, p, width, height,
+                                   iv::text::magnitudeValueReservePx(ls, glyphs));
         iv::text::buildLegend(ov, glyphs, ls, width, height);
     }
     glyphs.finish(ov);

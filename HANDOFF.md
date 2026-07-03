@@ -1,16 +1,18 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-06-22 by the visual-polish session (Claude / Opus 4.8)
+**Last updated:** 2026-07-03 by the visual-polish session (Claude / Opus 4.8)
 **Active milestone:** **M1–M9 all COMPLETE & locked.** Now in the **deferred visual-polish pass**
 (no new milestone yet — these are journaled presentation refinements, not contract changes; a new
 milestone, if any, starts at ORIENT → CONTRACT). M9 delivered inline LaTeX-subset math in labels
 via an owned subset parser + OpenType-MATH box layout over `hb_ot_math_*` (no TeX engine; D-0048):
 **ADR-0032 (mixed-font substrate)** + **ADR-0033 (inline `$…$` math)**, both Accepted. **Latest
-work (2026-06-22): B-0013 (legend/label visual polish) COMPLETE** — axis labels no longer overlap
-the tick numbers + label margin (D-0049); legend placed aspect-aware with a compact rotated
-magnitude caption (**ADR-0034**/D-0050); plot framed into the left 75% via a camera image shift so
-the legend has the right 25%, no more overlap (**ADR-0035**/D-0051); title tucked above the box; and
-legend label sizes balanced (caption-class ~axis size, value ticks at the volume tick size).
+work (2026-07-03): B-0017 (two additive cyclic colormaps) COMPLETE** — `colormapMode 2 = infinity`,
+`3 = grayscale` alongside twilight (0) / HSV (1), via a layered LUT (`sampler1DArray`) baked from
+`tools/colormaps/*.csv` by `gen_colormap.py`; host `iv::phaseColor` mirrors per layer, the viewer `C`
+key cycles all four — **ADR-0036**/**D-0053**. Earlier today **B-0016** (legend magnitude axis in
+scientific notation: decade ticks → `$10^{e}$`, small/large linear → shared-exponent `$m×10^{exp}$`,
+content-aware label reserve) shipped as **D-0052** (no ADR). Prior visual polish **B-0013** complete
+(D-0049; ADR-0034/D-0050; ADR-0035/D-0051).
 
 ## Current State
 The library does the full job end to end: ingest a complex field (`std::complex<float|
@@ -37,14 +39,15 @@ CHANGELOG.md).
   `FontSet`+shared `MixedGlyphs`. Legend `fieldName` default → `"$f$"` (math italic; amends
   ADR-0031). Resolves **B-0015**; follow-on B-0016 (legend sci-notation).
 
-Decisions D-0001…D-0051; Backlog **open:** B-0005 (more colormaps), B-0006 (VMA), B-0009
-(LICENSE), B-0014 (legend `L` in data units), B-0016 (legend sci-notation);
-B-0007/0008/0010/0011/0012/**0013**/0015 resolved (**B-0013 visual polish complete** —
-D-0049/ADR-0034/ADR-0035 + journaled sizing). ADR index current (**ADR-0001…0035
-Accepted**; 0009 superseded by 0015; 0034 amends 0028/0031; 0035 amends 0012). Gates: full suite
-**1410/106**; ASan+UBSan `ctest` **2/2**; GLFW-free (renderPlot present, makePlot absent) builds;
-text-free (transfer core, no HarfBuzz) builds; no HarfBuzz type in any public header; `iv_view`
-(via makePlot) present-path validation-CLEAN.
+Decisions D-0001…D-0053; Backlog **open:** B-0005 (more colormaps — *generic caller-supplied* maps),
+B-0006 (VMA), B-0009 (LICENSE); B-0014 (legend `L` in data units) **deferred indefinitely**
+(maintainer, 2026-07-03); B-0007/0008/0010/0011/0012/0013/0015/0016/**0017** resolved (**B-0017
+colormaps complete** — ADR-0036/D-0053; **B-0016 sci-notation** — D-0052). ADR index current
+(**ADR-0001…0036 Accepted**; 0009 superseded by 0015; 0034 amends 0028/0031; 0035 amends 0012; **0036
+amends 0014** — additive cyclic colormaps). Gates: full suite **1498/111**; ASan+UBSan `ctest`
+**2/2**; GLFW-free (renderPlot present, makePlot absent) builds; text-free (transfer core, no
+HarfBuzz) builds; no HarfBuzz type in any public header; `iv_view` (via makePlot) present-path
+validation-CLEAN; `tools/gen_colormap.py --check` clean.
 
 ## Test data (gitignored)
 `example_data/` (NOT tracked — `.gitignore`: `/example_data/`, `*.c64`): 11 heavy raw
@@ -53,23 +56,26 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** **B-0013 (legend/label visual polish) is RESOLVED** — axis-label overlap +
-framing (D-0049), legend placement + rotated caption (ADR-0034/D-0050), plot-left/legend-right
-framing (ADR-0035/D-0051), title tucked above the box, and label sizes (legend caption-class at
-~axis size `kLegendLabelScale=1.3`; magnitude value ticks at the volume tick size). Tree clean. Full
-suite **1410/106**; ASan+UBSan **2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path
-validation-CLEAN.
+**Nothing in flight.** **B-0017 (additive cyclic colormaps `infinity`/`grayscale`) is RESOLVED**
+(ADR-0036/D-0053), and **B-0016** (D-0052) + **B-0013** before it. Full suite **1498/111**; ASan+UBSan
+**2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN;
+`gen_colormap.py --check` clean. Tree not committed (maintainer commits when he chooses).
 
 ## Next Action
-Visual polish (B-0013) is done. The maintainer plans to resume on these backlog items tomorrow:
-- **B-0016** legend magnitude-axis **scientific notation** (`1×10⁻³`) — unblocked: reuse the M9
-  math layout to typeset the generated mantissa×10^exp (a `legend_builder` change; likely no ADR —
-  presentation, but confirm). The new `appendLabelRotated` could also rotate the value-label column.
-- **B-0014** legend thickness `L` shown in the **data's physical units** — needs a short ADR
-  (CONTRACT step) before implementing (it changes what the `L` label means).
-- **B-0005** more **colormaps** beyond twilight/HSV — extends ADR-0014; needs an ADR amendment.
+B-0016 (sci-notation) and B-0017 (colormaps) are done. Remaining open backlog (no item in progress):
+- **B-0005 — generic/caller-supplied colormaps.** Now the *generalization* of B-0017: a runtime API
+  for caller-supplied LUTs (vs the committed maps ADR-0036 added). Would extend ADR-0014/0036; adding
+  another *committed* cyclic map is already generator + data only (`tools/colormaps/<name>.csv` + a
+  `LAYERS` entry in `gen_colormap.py`, then extend `kColormapModeCount`'s consumers). Needs an ADR if
+  it changes the public colormap surface (runtime LUTs).
 - **B-0009** declare a top-level project **LICENSE** (administrative; see VENDORING.md for the
   third-party license set — HarfBuzz/Slug, the GFL NewCM fonts).
+- **B-0006** VMA (deferred, D-0017); **B-0014** legend `L` in data units — **DEFERRED INDEFINITELY**.
+To eyeball a colormap: the scratch pattern (link `iv_text`, `iv::renderPlot` with
+`opts.colormapMode = 0..3`, write a PNG via `examples/png.hpp`), or `DISPLAY=:1 ./build/debug/iv_view`
+and press `C` to cycle twilight → HSV → infinity → grayscale. To eyeball the legend sci-notation: same
+scratch pattern with `opts.opacityMode=1` (log decade ticks) or a tiny `opts.magnitudeRange` (linear
+sci ticks), rendered tall/square/wide to exercise placement.
 To eyeball: build `renderPlot` into a tiny driver (the scratch pattern: link `iv_text`, call
 `iv::renderPlot` with labeled `PlotOptions.axes`, write a PNG via `examples/png.hpp` — render at a
 TALL aspect, e.g. 600×1000, to exercise legend placement), or `DISPLAY=:1 ./build/debug/iv_view
@@ -91,11 +97,22 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   immutable — record deviations in DECISIONS.md + CHANGELOG (as D-0044 corrected ADR-0028's
   y-up→y-down coordinate note without superseding).
 - **The legend draws ONLY through the host transfer evaluators** (`iv/transfer.hpp`,
-  ADR-0028) — `phaseColor` (mode 0 = the committed `kTwilightLut` with linear+repeat, *same
-  data as the GPU*; mode 1 = the analytic HSV) and `transferNormalized`/`transferOpacity`
-  (mirror `ray_march.comp::sampleOpacity`, **pre** the ADR-0020 dt-correction). They must stay
-  in lock-step with the shader: the `[vk][renderer]` "host phaseColor matches the GPU
-  colormap" cross-check is the guard. Don't "optimize" one side without the other.
+  ADR-0028) — `phaseColor` (LUT modes 0/2/3 sample the committed `kColormapLuts[layer]` with
+  linear+repeat, *same data as the GPU*; mode 1 = the analytic HSV) and
+  `transferNormalized`/`transferOpacity` (mirror `ray_march.comp::sampleOpacity`, **pre** the
+  ADR-0020 dt-correction). They must stay in lock-step with the shader: the `[vk][renderer]` "host
+  phaseColor matches the GPU colormap" cross-check (now over EVERY mode) is the guard. Don't
+  "optimize" one side without the other.
+- **Colormaps are a layered LUT (ADR-0014/0036).** `colormapMode`: **0 twilight, 1 HSV (analytic),
+  2 infinity, 3 grayscale**; `kColormapModeCount = 4`. The LUT maps live in `colormap_lut.hpp` as a
+  generated table `kColormapLuts[kColormapLutCount][256*4]` (+ `kColormapLutNames`), one layer per
+  map in mode order *skipping HSV* (layer 0 twilight → mode 0, 1 infinity → mode 2, 2 grayscale →
+  mode 3). The GPU binds a **`sampler1DArray`** (binding 3); both the shader (`colormapLayer`) and
+  host (`colormapLutLayer`) map `mode → layer` as `mode==0?0:mode-1` (out-of-range → twilight) — keep
+  them IDENTICAL. Adding another committed cyclic map = drop `tools/colormaps/<name>RGBAcolormap.csv`,
+  add its name to `LAYERS` in `gen_colormap.py`, regenerate (`gen_colormap.py`; `--check` gates
+  staleness), done — the mode/layer plumbing generalizes. The `C` key cycles `(mode+1) %
+  kColormapModeCount`.
 - **Screen-space overlay channels** (`Overlay::screenLines/screenTriangles`, ADR-0028) are
   **Vulkan clip space, y-down** (y=−1 top), drawn with the identity transform after the
   world-space `lines/triangles` (which use `Overlay::transform` = the view-projection) and
@@ -115,19 +132,30 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   `magnitudeCaption()`/`phaseCaption()`; `magnitudeLabel`/`phaseLabel` override — ADR-0031) and,
   like every label, may carry inline `$…$` math, typeset by the M9 math layer (ADR-0033;
   **B-0012 resolved** — the italic + NewCMMath faces are bundled). See the "Inline math" landmine.
-  **Legend placement & magnitude caption (ADR-0034, D-0050):** the swatch position is NOT the fixed
-  `rectNdc` default — the facade calls `iv::text::placeLegendRight(spec, camera, fbW, fbH)` (projects
-  the box, pushes the swatch right to clear it, aspect-aware) before `buildLegend`, per-frame in
-  `makePlot` (live camera) and once in `renderPlot`. It preserves the swatch width/vertical extent,
-  never moves left of the incoming default, and clamps so the right value labels stay on screen
-  (extreme portrait keeps the default + accepts residual overlap). The **magnitude** caption is drawn
-  rotated −π/2, vertically centered LEFT of the swatch (`appendLabelRotated`), NOT centered above; the
-  phase caption / ticks / value labels / `L` are unchanged. **The legend's
-  caption-class labels (−π/0/π phase labels, captions, `L`) render at `labelSize = baseSize ·
-  kLegendLabelScale` (1.3, ~the plot's axis-label size); the **magnitude value ticks** (numbers on the
-  swatch's vertical axis) stay at `baseSize` (= the volume's axis tick values). `centeredLabel`/
-  `leftLabel` take an explicit size; the vertical label spacing is in `labelSize` units. The `placeLegendRight` px tunables
-  (`kBoxGapPx`/`kCapAllowPx`/`kValAllowPx`/`kRightEdgeNdc`) live in legend_builder.cpp.
+  **Legend placement & magnitude caption (ADR-0034, D-0050; refined by D-0052/B-0016):** the swatch
+  position is NOT the fixed `rectNdc` default — the facade calls
+  `iv::text::placeLegendRight(spec, camera, fbW, fbH, valueReservePx)` (projects the box, positions the
+  swatch aspect-aware) before `buildLegend`, per-frame in `makePlot` (live camera) and once in
+  `renderPlot`. It preserves the swatch width/vertical extent. **Placement priority (D-0052):** labels
+  win over full box clearance — when a value label fits at/right-of the default the swatch sits at the
+  default or is pushed right to clear the box (capped so labels stay on screen); when it does NOT fit
+  at the default (narrow window OR a wide B-0016 sci label) the swatch **slides left toward `hi`** to
+  keep the widest label on screen, but **never left of `boxClear`** (never INTO the box); if the box
+  fills a portrait frame so clearing it and fitting the label conflict, clearing the box wins and the
+  value labels clip at the right edge. **`valueReservePx` is measured, not fixed** — the facade passes
+  `magnitudeValueReservePx(spec, glyphs)` (widest actual value label at the tick size + stubs), because
+  the B-0016 sci labels vary a lot in width (a decade `10⁻⁴` is narrow, a linear `2.5×10⁻³` is wide); a
+  fixed reserve clipped the exponent. `buildLegend` and the reserve share one `magnitudeTicks(spec)`
+  generator. **Value-label format (B-0016/D-0052):** magnitude ticks are inline-math — log decade →
+  `$10^{e}$`; linear → plain decimals except very small/large ranges (`|max|<1e-2` or `>=1e4`) →
+  shared-exponent `$m\times10^{exp}$`; zero → `0`. Public formatters `decadeTickLabel`/
+  `linearTickLabel`. The **magnitude** caption is drawn rotated −π/2, vertically centered LEFT of the
+  swatch (`appendLabelRotated`), NOT centered above. **Label sizes:** caption-class labels (−π/0/π
+  phase labels, captions, `L`) render at `labelSize = baseSize · kLegendLabelScale` (1.3, ~the plot's
+  axis-label size); the **magnitude value ticks** stay at `baseSize` (= the volume's axis tick values).
+  `centeredLabel`/`leftLabel` take an explicit size; vertical spacing is in `labelSize` units. The
+  `placeLegendRight` px tunables (`kBoxGapPx`/`kCapAllowPx`/`kTickReservePx`/`kRightEdgeNdc`, + the
+  46 px default reserve arg) live in legend_builder.cpp.
   **Plot-left framing (ADR-0035, D-0051):** when a legend is shown the facade frames the plot into
   the LEFT 75% via `RenderParams::imageShiftNdcX = −0.25` + a larger distance (`kPlotFrameDistance
   Legend = 4.0`); the legend takes the right 25%. `imageShiftNdcX` (default 0, render-inert) is a
@@ -193,9 +221,11 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   (`\frac`/`\overline` bars → `overlay.screenTriangles`) are NOT rotated, so a rotated label must not
   contain them (the legend captions are bars + a symbol; fine).
 - **`glslc` is a required build tool** (ADR-0011/D-0022). Shaders in `shaders/`; SPIR-V
-  embedded (regenerated each build). The colormap LUT is committed data
-  (`include/iv/vk/colormap_lut.hpp`) — regenerate with `tools/gen_colormap.py` if it changes;
-  it is shared by the GPU sampler AND `iv::phaseColor`, so a change moves both.
+  embedded (regenerated each build). The colormap LUTs are committed data
+  (`include/iv/vk/colormap_lut.hpp`, the `kColormapLuts` table) — regenerate with
+  `tools/gen_colormap.py` if a source (matplotlib twilight or a `tools/colormaps/*.csv`) changes;
+  `--check` gates staleness. Shared by the GPU sampler AND `iv::phaseColor`, so a change moves both.
+  See the layered-LUT landmine above (ADR-0036).
 - **Viewer is GLFW-coupled & isolated** (ADR-0016): only `iv_viewer`/`iv_view`/`iv_plot` link
   glfw. **Text is HarfBuzz-coupled & isolated** (ADR-0022): only `iv_text` (and `iv_plot` via
   it) link vendored HarfBuzz; **no HB type in any `include/` header** (grep-able gate).
@@ -239,11 +269,12 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
 
 ## Pointers
 - Governing process: `DEV_PROCESS.md`. Milestone arc: `MILESTONES.md` (M1–M9 complete & locked).
-- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0035 Accepted** (0009 superseded by 0015;
+- Contracts: `docs/adr/INDEX.md` — **ADR-0001…0036 Accepted** (0009 superseded by 0015;
   0020/0027 extend 0013; 0028 extends 0021; 0030 extends 0020; 0031 amends 0028/0029; **0034 amends
   0028 §(3)/0031** — legend placement + rotated magnitude caption; **0035 amends 0012** — the
-  render-inert horizontal image shift that frames the plot left for the legend).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0051), Backlog B-0001…B-0016.
+  render-inert horizontal image shift that frames the plot left for the legend; **0036 amends 0014** —
+  additive cyclic colormaps `infinity`/`grayscale` via a layered LUT).
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0053), Backlog B-0001…B-0017.
 - Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
   makePlot); `iv_bench` (perf).

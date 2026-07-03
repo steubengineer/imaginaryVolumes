@@ -205,6 +205,70 @@ TEST_CASE("Legend: log mode uses decade ticks that track the window (B-0011)", "
     CHECK(ow.glyphs.size() > on.glyphs.size());
 }
 
+// B-0016: the auto-generated magnitude-axis tick labels are promoted to inline `$…$` math so the
+// M9 layout typesets true superscript exponents. Pin the pure formatting policy (maintainer choice
+// 2026-07-03: decade ticks are a pure power 10^e; linear ticks stay plain decimals except for very
+// small/large ranges, which use a shared-exponent m×10^exp). These strings are what buildLegend
+// feeds the math layout, so a superscript actually renders (a `$`-free label would not).
+TEST_CASE("Legend: magnitude tick labels use inline-math scientific notation (B-0016)", "[legend]") {
+    SECTION("log decade ticks are a pure power of ten") {
+        CHECK(iv::text::decadeTickLabel(0) == "1"); // 10^0 elided to the plain mantissa
+        CHECK(iv::text::decadeTickLabel(-3) == "$10^{-3}$");
+        CHECK(iv::text::decadeTickLabel(4) == "$10^{4}$");
+        // The exponent is inside a `$…$` span (else the M9 layout would not superscript it).
+        CHECK(iv::text::decadeTickLabel(-3).front() == '$');
+    }
+    SECTION("ordinary linear ranges keep plain decimals (no 1.2×10⁰)") {
+        CHECK(iv::text::linearTickLabel(1.2, 0.1, 5.0) == "1.2");
+        CHECK(iv::text::linearTickLabel(0.0, 0.1, 5.0) == iv::formatTick(0.0, 0.1)); // "0.0", unchanged
+        CHECK(iv::text::linearTickLabel(0.5, 0.5, 2.0) == iv::formatTick(0.5, 0.5));
+        // Same value, plain when the axis is ordinary — no `$` (teeth: the sci path is gated).
+        CHECK(iv::text::linearTickLabel(1.2, 0.1, 5.0).find('$') == std::string::npos);
+    }
+    SECTION("very small linear ranges use a shared exponent m×10^exp") {
+        // axisMax 0.004 < 1e-2 -> shared exp = -3; ticks read against it, zero excepted.
+        CHECK(iv::text::linearTickLabel(0.004, 0.001, 0.004) == "$4\\times10^{-3}$");
+        CHECK(iv::text::linearTickLabel(0.002, 0.001, 0.004) == "$2\\times10^{-3}$");
+        CHECK(iv::text::linearTickLabel(0.0, 0.001, 0.004) == "0");
+    }
+    SECTION("very large linear ranges use a shared exponent too") {
+        // axisMax 5e4 >= 1e4 -> shared exp = 4.
+        CHECK(iv::text::linearTickLabel(30000.0, 10000.0, 50000.0) == "$3\\times10^{4}$");
+        CHECK(iv::text::linearTickLabel(10000.0, 10000.0, 50000.0) == "$1\\times10^{4}$");
+    }
+}
+
+// B-0016 follow-on: the sci-notation labels are much wider than the old decimals, so the swatch's
+// right-edge reserve must be measured from the ACTUAL labels — a fixed reserve clipped the exponent
+// (seen in a headless render). magnitudeValueReservePx measures the widest label buildLegend draws.
+TEST_CASE("Legend: value-label reserve grows for wide sci labels so none clip (B-0016)", "[legend]") {
+    auto fonts = FontSet::create(16.0f);
+    REQUIRE(fonts.has_value());
+    MixedGlyphs g(*fonts);
+
+    iv::LegendSpec ordinary; // linear, ordinary range -> short decimals ("1.0", "0.5")
+    ordinary.opacityMode = 0;
+    ordinary.range = {0.0f, 5.0f};
+
+    iv::LegendSpec sci; // linear, tiny range -> wide sci labels ("4×10⁻³")
+    sci.opacityMode = 0;
+    sci.range = {0.0f, 0.004f};
+
+    const float rOrdinary = iv::text::magnitudeValueReservePx(ordinary, g);
+    const float rSci = iv::text::magnitudeValueReservePx(sci, g);
+
+    // Teeth: the wide-label axis reserves strictly more room than the short-decimal axis; if the
+    // reserve were a fixed constant (the old bug) these would be equal and the exponent would clip.
+    CHECK(rSci > rOrdinary + 10.0f);
+    // And the reserve actually covers the widest label it will draw (+ the tick/gap stubs).
+    float widest = 0.0f;
+    for (const double mv : iv::ticksFor(0.0, 0.004, iv::kDefaultMajor, 1).major) {
+        widest = std::max(widest, iv::text::math::measureLabel(
+                                      *fonts, iv::text::linearTickLabel(mv, 0.001, 0.004), 16.0f));
+    }
+    CHECK(rSci >= widest);
+}
+
 TEST_CASE("Legend: thickness correction boosts swatch opacity (ADR-0030)", "[legend]") {
     auto fonts = FontSet::create(16.0f);
     REQUIRE(fonts.has_value());
@@ -330,10 +394,11 @@ TEST_CASE("Legend: magnitude caption is rotated to the left of the swatch (ADR-0
 TEST_CASE("Legend: placeLegendRight clears the box, aspect-aware (ADR-0034)", "[legend]") {
     const RenderParams cam = cubeCamera();
 
-    const auto place = [&](std::array<float, 4> rect, std::uint32_t W, std::uint32_t H) {
+    const auto place = [&](std::array<float, 4> rect, std::uint32_t W, std::uint32_t H,
+                           float reservePx = 46.0f) {
         iv::LegendSpec s;
         s.rectNdc = rect;
-        iv::text::placeLegendRight(s, cam, W, H);
+        iv::text::placeLegendRight(s, cam, W, H, reservePx);
         return s.rectNdc;
     };
 
@@ -368,14 +433,36 @@ TEST_CASE("Legend: placeLegendRight clears the box, aspect-aware (ADR-0034)", "[
         CHECK(r[0] == Catch::Approx(def[0])); // no-op (teeth: an always-push build would move it)
         CHECK(r[2] == Catch::Approx(def[2]));
     }
-    SECTION("never moves the swatch left of the default (all aspects)") {
+    SECTION("never moves the swatch left of the default (default reserve, all aspects)") {
         for (const auto wh : {std::array<std::uint32_t, 2>{600, 1000},
                               std::array<std::uint32_t, 2>{900, 900},
                               std::array<std::uint32_t, 2>{1400, 600}}) {
             const auto r = place(def, wh[0], wh[1]);
             CAPTURE(wh[0], wh[1], r[0]);
-            CHECK(r[0] >= def[0] - 1e-5f); // extreme portrait keeps the default, never worsens it
+            CHECK(r[0] >= def[0] - 1e-5f); // narrow labels fit at/right-of the default at every aspect
         }
+    }
+    // B-0016: a wide value-label reserve (the sci labels) needs more room than the default panel
+    // leaves before the screen edge. When the box is far enough left, the swatch slides LEFT of the
+    // default just enough to keep the widest label on screen — but never into the box. A wide window
+    // (box far left) is where there IS room to slide, so this is where the fix must bite.
+    SECTION("wide labels slide the swatch left to stay on screen, but never into the box (B-0016)") {
+        const std::uint32_t W = 1400u, H = 600u; // wide: the projected box sits well left of default
+        const float halfW = static_cast<float>(W) * 0.5f;
+        const float reservePx = 120.0f;          // a wide sci label ("2.5×10⁻³"-class) reserve
+        const float boxRight = projectedBoxRight(cam, W, H);
+        const float boxClear = boxRight + (18.0f + 30.0f) / halfW; // gap + caption room (mirror .cpp)
+        const float hi = 0.98f - reservePx / halfW - width;
+        CAPTURE(boxRight, boxClear, hi);
+        REQUIRE(hi < def[0]);      // the wide label does NOT fit at the default...
+        REQUIRE(boxClear < hi);    // ...but the box is far enough left that sliding to hi clears it
+
+        const auto r = place(def, W, H, reservePx);
+        CHECK(r[0] < def[0]);                              // slid left of the default (teeth: old pinned)
+        CHECK(r[0] == Catch::Approx(hi));                  // exactly enough to keep the label on screen
+        CHECK(r[2] + reservePx / halfW <= 0.98f + 1e-4f);  // widest value label on screen
+        CHECK(r[0] >= boxClear - 1e-5f);                   // never slid into the box (caption clears it)
+        CHECK(r[2] - r[0] == Catch::Approx(width));        // swatch width preserved
     }
 }
 

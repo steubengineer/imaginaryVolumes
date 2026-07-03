@@ -10,8 +10,8 @@ layout(local_size_x = 8, local_size_y = 8) in;
 layout(set = 0, binding = 0) uniform sampler3D uVolume;
 // Output: 2D RGBA8 storage image (ADR-0011).
 layout(set = 0, binding = 1, rgba8) uniform writeonly image2D uOutput;
-// Cyclic phase colormap LUT: 1D RGBA8, linear + repeat (ADR-0014).
-layout(set = 0, binding = 3) uniform sampler1D uColormap;
+// Cyclic phase colormap LUTs: 1D RGBA8 array, one layer per map, linear + repeat (ADR-0014/0036).
+layout(set = 0, binding = 3) uniform sampler1DArray uColormap;
 
 layout(set = 0, binding = 2, std140) uniform Params {
     vec4 eye;         // xyz = camera eye
@@ -21,7 +21,7 @@ layout(set = 0, binding = 2, std140) uniform Params {
     vec4 background;   // rgba background (ADR-0012)
     vec4 range;        // x=minPositive, y=max, z=densityScale, w=alphaTermination
     uvec4 ints;        // x=width, y=height, z=stepCount, w=opacityMode(0 lin,1 log)
-    uvec4 modes;       // x=colormapMode (0 LUT,1 HSV); y=logDecades float bits (ADR-0027)
+    uvec4 modes;       // x=colormapMode (0 twilight,1 HSV,2 infinity,3 grayscale); y=logDecades bits
 } P;
 
 const float PI = 3.14159265358979323846;
@@ -62,13 +62,20 @@ vec3 hsv2rgb(float h) {
     return clamp(p - 1.0, 0.0, 1.0);
 }
 
-// ADR-0014: phase -> rgb. t = (theta+pi)/2pi, cyclic.
+// ADR-0036: colormapMode -> LUT array layer. 0->0 twilight, 2->1 infinity, 3->2 grayscale
+// (mode 1 = analytic HSV has no layer; the caller handles it). Mirrors iv::phaseColor (host).
+float colormapLayer(uint mode) {
+    return float(mode == 0u ? 0u : mode - 1u);
+}
+
+// ADR-0014/0036: phase -> rgb. t = (theta+pi)/2pi, cyclic.
 vec3 sampleColor(float phase) {
     float t = (phase + PI) / (2.0 * PI);
     if (P.modes.x == 1u) {                // HSV hue wheel
         return hsv2rgb(t);
     }
-    return texture(uColormap, t).rgb;     // perceptually-uniform LUT (linear+repeat)
+    // Cyclic LUT layer (linear + repeat on t; the layer index is integral).
+    return texture(uColormap, vec2(t, colormapLayer(P.modes.x))).rgb;
 }
 
 void main() {

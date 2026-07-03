@@ -20,8 +20,9 @@ namespace iv::vk {
                                                            ::vk::ImageLayout oldLayout,
                                                            ::vk::ImageLayout newLayout,
                                                            ::vk::AccessFlags srcAccess,
-                                                           ::vk::AccessFlags dstAccess) {
-    const ::vk::ImageSubresourceRange range{::vk::ImageAspectFlagBits::eColor, 0u, 1u, 0u, 1u};
+                                                           ::vk::AccessFlags dstAccess,
+                                                           std::uint32_t layerCount = 1u) {
+    const ::vk::ImageSubresourceRange range{::vk::ImageAspectFlagBits::eColor, 0u, 1u, 0u, layerCount};
     return ::vk::ImageMemoryBarrier{}
         .setOldLayout(oldLayout)
         .setNewLayout(newLayout)

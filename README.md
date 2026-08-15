@@ -11,6 +11,19 @@ orthogonally in one image. Over the volume it draws a bounding box, ticked and
 labeled axes, and a **phase × magnitude legend**, with labels that support inline
 LaTeX-subset math.
 
+<p align="center">
+  <img src="docs/images/example.png" width="720"
+       alt="An electron–hole pair wavefunction rendered by imaginaryVolumes">
+</p>
+
+<p align="center"><em>
+An electron–hole pair wavefunction Ψ(x<sub>e</sub>, x<sub>h</sub>, t) — a 500³ complex
+field — rendered by imaginaryVolumes. Magnitude |Ψ| sets opacity and phase arg(Ψ) sets
+colour through the cyclic <code>twilight</code> map, so amplitude and phase are read at once;
+the phase × magnitude legend is at right. The title, field name, and axis labels are inline
+LaTeX, drawn straight from the <code>iv_view</code> command line.
+</em></p>
+
 ## Features
 
 - **Complex-field DVR** — ingest `std::complex<float|double>` on a grid (x-fastest);

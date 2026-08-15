@@ -10,6 +10,30 @@ with public-contract impact (§1.1) *also* get an ADR, referenced here.
 during project initiation; D-0009…D-0010 were added during M1's CONTRACT phase
 the same day. Future entries prepend above.)
 
+### D-0054 — Project license: MIT; third-party attribution + README for public release (B-0009)
+- **Date / milestone:** 2026-08-14 / post-M9 (pre-public-release) — maintainer decision
+- **Choice:** Adopt a top-level project license (the repo had none — B-0009) ahead of publishing to
+  public GitHub. The bundled third-party components are all permissive — HarfBuzz/libharfbuzz-gpu
+  ("Old MIT"; the Slug glyph algorithm's patent is dedicated to the public), the New Computer Modern
+  faces (GUST Font License, GFL; the GPL subset is excluded), and Catch2 (BSL-1.0, tests only) — so
+  our outbound license is a free choice with no copyleft obligation. Options weighed (menu): MIT,
+  Apache-2.0, BSD-3-Clause.
+- **Decision:** **MIT** (`Copyright (c) 2026 John Steuben`) — simplest and most permissive, for
+  maximal adoption/embedding of a library; Slug's public-domain patent dedication makes Apache-2.0's
+  explicit patent grant unnecessary here. Added `LICENSE` (MIT + a pointer to the notices),
+  `THIRD_PARTY_NOTICES.md` (attributes HarfBuzz "Old MIT", the NewCM GFL faces, Catch2 BSL-1.0, each
+  pointing at the in-repo license text), and a top-level `README.md` for the public repo.
+- **Rationale:** A usable library must declare a license; MIT maximizes downstream use and matches the
+  project's permissive-only bundling policy. The vendored deps' own license files
+  (`third_party/harfbuzz/COPYING`, `third_party/fonts/GUST-FONT-LICENSE.txt`, the Catch2 header) remain
+  in-tree, so their attribution terms are satisfied; the notices file collates them for clarity.
+- **Contract impact:** **none as a code contract — journaled governance.** Complements **ADR-0001**
+  (build/dependency policy, which vets the *inbound* third-party licenses); the *outbound* project
+  license is a legal/governance fact, not an architectural decision, so it is journaled here rather
+  than ADR'd. Resolves **B-0009**.
+- **Deferred alternatives:** Apache-2.0 (patent grant + NOTICE — heavier, unneeded given the deps);
+  BSD-3-Clause (scientific-ecosystem norm; equivalent permissiveness, an extra non-endorsement clause).
+
 ### D-0053 — Two additive cyclic colormaps (`infinity`, `grayscale`) via a layered LUT (B-0017)
 - **Date / milestone:** 2026-07-03 / post-M9 (visual-polish pass) — maintainer-approved (ADR-0036)
 - **Choice:** The maintainer authored two additional cyclic phase colormaps (committed 256-row RGBA
@@ -1091,6 +1115,8 @@ the same day. Future entries prepend above.)
   (the bundled NCM faces are GFL, which does not constrain our code license).
 - **Revisit when:** before a public release, or if bundling any GPL+DE asset.
 - **Contract link:** none yet (project-governance, would touch ADR-0001).
+- **Resolved:** 2026-08-14 / **D-0054** — **MIT** (`© 2026 John Steuben`), chosen before the public
+  release. Added `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `README.md`; journaled governance (no ADR).
 
 ### B-0008 — Opacity correction for sample spacing (dt-independent α)
 - **Origin:** M5 benchmark teeth investigation (D-0030), 2026-06-19.

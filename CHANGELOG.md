@@ -4,6 +4,20 @@ Per ADR-0002, this changelog records each milestone's work, its governing ADRs,
 and the **demonstrated teeth evidence** (red→green or fault injection) for its
 tests. Newest milestone first.
 
+## Post-M9 — Project license (MIT) + public-release docs (B-0009, D-0054)
+
+Declare the project's license ahead of publishing to public GitHub (no code change).
+- **`LICENSE`** — **MIT**, `Copyright (c) 2026 John Steuben`. All bundled third-party components are
+  permissive (HarfBuzz/libharfbuzz-gpu "Old MIT" with Slug's public-domain patent dedication; the
+  New Computer Modern faces under the GUST Font License; Catch2 BSL-1.0), so the outbound license is
+  a free choice; MIT for maximal adoption.
+- **`THIRD_PARTY_NOTICES.md`** — collates the bundled components and their in-repo license texts.
+- **`README.md`** — top-level overview, requirements, build, usage (facade + `iv_view`), layout, and
+  license for the public repo.
+
+Journaled as **D-0054**; resolves **B-0009**. No tests affected (docs/text only); the tree still
+builds and passes (full suite 1498/111).
+
 ## Post-M9 — Additive cyclic colormaps: `infinity` + `grayscale` (B-0017, ADR-0036, D-0053)
 
 Add two maintainer-authored cyclic phase colormaps as selectable modes, **additive** (twilight/HSV

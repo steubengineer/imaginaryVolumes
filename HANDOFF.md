@@ -6,13 +6,12 @@
 milestone, if any, starts at ORIENT → CONTRACT). M9 delivered inline LaTeX-subset math in labels
 via an owned subset parser + OpenType-MATH box layout over `hb_ot_math_*` (no TeX engine; D-0048):
 **ADR-0032 (mixed-font substrate)** + **ADR-0033 (inline `$…$` math)**, both Accepted. **Latest
-work (2026-07-03): B-0017 (two additive cyclic colormaps) COMPLETE** — `colormapMode 2 = infinity`,
-`3 = grayscale` alongside twilight (0) / HSV (1), via a layered LUT (`sampler1DArray`) baked from
-`tools/colormaps/*.csv` by `gen_colormap.py`; host `iv::phaseColor` mirrors per layer, the viewer `C`
-key cycles all four — **ADR-0036**/**D-0053**. Earlier today **B-0016** (legend magnitude axis in
-scientific notation: decade ticks → `$10^{e}$`, small/large linear → shared-exponent `$m×10^{exp}$`,
-content-aware label reserve) shipped as **D-0052** (no ADR). Prior visual polish **B-0013** complete
-(D-0049; ADR-0034/D-0050; ADR-0035/D-0051).
+work (2026-08-14): B-0009 (project LICENSE) COMPLETE** — the project is **MIT** (`© 2026 John
+Steuben`); added `LICENSE`, `THIRD_PARTY_NOTICES.md` (HarfBuzz "Old MIT" + Slug public-domain patent;
+NewCM GFL fonts; Catch2 BSL-1.0), and a top-level `README.md`, in prep for the **public GitHub
+release** (journaled **D-0054**; no ADR). Earlier: **B-0017** (colormaps `infinity`/`grayscale` —
+ADR-0036/D-0053), **B-0016** (legend sci-notation — D-0052), **B-0013** (visual polish — D-0049;
+ADR-0034/D-0050; ADR-0035/D-0051).
 
 ## Current State
 The library does the full job end to end: ingest a complex field (`std::complex<float|
@@ -39,10 +38,10 @@ CHANGELOG.md).
   `FontSet`+shared `MixedGlyphs`. Legend `fieldName` default → `"$f$"` (math italic; amends
   ADR-0031). Resolves **B-0015**; follow-on B-0016 (legend sci-notation).
 
-Decisions D-0001…D-0053; Backlog **open:** B-0005 (more colormaps — *generic caller-supplied* maps),
-B-0006 (VMA), B-0009 (LICENSE); B-0014 (legend `L` in data units) **deferred indefinitely**
-(maintainer, 2026-07-03); B-0007/0008/0010/0011/0012/0013/0015/0016/**0017** resolved (**B-0017
-colormaps complete** — ADR-0036/D-0053; **B-0016 sci-notation** — D-0052). ADR index current
+Decisions D-0001…D-0054; Backlog **open:** B-0005 (more colormaps — *generic caller-supplied* maps),
+B-0006 (VMA); B-0014 (legend `L` in data units) **deferred indefinitely** (maintainer, 2026-07-03);
+B-0007/0008/0009/0010/0011/0012/0013/0015/0016/**0017** resolved (**B-0009 LICENSE = MIT** — D-0054;
+B-0017 colormaps — ADR-0036/D-0053; B-0016 sci-notation — D-0052). ADR index current
 (**ADR-0001…0036 Accepted**; 0009 superseded by 0015; 0034 amends 0028/0031; 0035 amends 0012; **0036
 amends 0014** — additive cyclic colormaps). Gates: full suite **1498/111**; ASan+UBSan `ctest`
 **2/2**; GLFW-free (renderPlot present, makePlot absent) builds; text-free (transfer core, no
@@ -56,13 +55,25 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Nothing in flight.** **B-0017 (additive cyclic colormaps `infinity`/`grayscale`) is RESOLVED**
-(ADR-0036/D-0053), and **B-0016** (D-0052) + **B-0013** before it. Full suite **1498/111**; ASan+UBSan
-**2/2**; text-free + GLFW-free OK; boundary clean; viewer present-path validation-CLEAN;
-`gen_colormap.py --check` clean. Tree not committed (maintainer commits when he chooses).
+**Public GitHub release in progress.** **B-0009 (LICENSE = MIT) is RESOLVED** (D-0054): `LICENSE`,
+`THIRD_PARTY_NOTICES.md`, `README.md` added. **Remaining step: push to public GitHub** — BLOCKED on
+`gh` re-auth (the stored token for `steubengineer` is invalid; run `gh auth login -h github.com`).
+No remote is configured yet. Pre-flight done: secrets/keys scan clean, no `/home/johns` paths in
+tracked source, `example_data/`+`*.c64` gitignored, all vendored deps permissive. Full suite
+**1498/111**; ASan+UBSan **2/2**; isolation builds OK; viewer validation-CLEAN.
 
 ## Next Action
-B-0016 (sci-notation) and B-0017 (colormaps) are done. Remaining open backlog (no item in progress):
+**Publish to public GitHub** (B-0009 done; this is the last requested step). Needs `gh` re-auth first
+(`gh auth login -h github.com` as `steubengineer`). Then, from the repo root:
+```sh
+git add -A && git commit    # commit the LICENSE/README/notices + doc updates
+gh repo create imaginaryVolumes --public --source=. --remote=origin --push
+```
+(or, without `gh`: create the empty repo on github.com, then `git remote add origin <url>` and
+`git push -u origin master`). Default branch is **master**. After pushing, sanity-check that
+`example_data/`/`*.c64` and `build/` did not upload (they're gitignored).
+
+Then the remaining open backlog (no item in progress):
 - **B-0005 — generic/caller-supplied colormaps.** Now the *generalization* of B-0017: a runtime API
   for caller-supplied LUTs (vs the committed maps ADR-0036 added). Would extend ADR-0014/0036; adding
   another *committed* cyclic map is already generator + data only (`tools/colormaps/<name>.csv` + a
@@ -274,7 +285,7 @@ Eyeball a math plot: build a quick `renderPlot` driver, or `DISPLAY=:1 ./build/d
   0028 §(3)/0031** — legend placement + rotated magnitude caption; **0035 amends 0012** — the
   render-inert horizontal image shift that frames the plot left for the legend; **0036 amends 0014** —
   additive cyclic colormaps `infinity`/`grayscale` via a layered LUT).
-- Decisions & rationale: `DECISIONS.md` (D-0001…D-0053), Backlog B-0001…B-0017.
+- Decisions & rationale: `DECISIONS.md` (D-0001…D-0054), Backlog B-0001…B-0017.
 - Work + teeth per milestone: `CHANGELOG.md` (incl. § M8 and the "Post-M7" section).
 - Demos: `examples/iv_render_demo [out_dir]` (offscreen PNGs); `iv_view` (interactive, via
   makePlot); `iv_bench` (perf).

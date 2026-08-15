@@ -1,6 +1,6 @@
 # HANDOFF.md — imaginaryVolumes
 
-**Last updated:** 2026-07-03 by the visual-polish session (Claude / Opus 4.8)
+**Last updated:** 2026-08-14 by the public-release session (Claude / Opus 4.8)
 **Active milestone:** **M1–M9 all COMPLETE & locked.** Now in the **deferred visual-polish pass**
 (no new milestone yet — these are journaled presentation refinements, not contract changes; a new
 milestone, if any, starts at ORIENT → CONTRACT). M9 delivered inline LaTeX-subset math in labels
@@ -9,9 +9,11 @@ via an owned subset parser + OpenType-MATH box layout over `hb_ot_math_*` (no Te
 work (2026-08-14): B-0009 (project LICENSE) COMPLETE** — the project is **MIT** (`© 2026 John
 Steuben`); added `LICENSE`, `THIRD_PARTY_NOTICES.md` (HarfBuzz "Old MIT" + Slug public-domain patent;
 NewCM GFL fonts; Catch2 BSL-1.0), and a top-level `README.md`, in prep for the **public GitHub
-release** (journaled **D-0054**; no ADR). Earlier: **B-0017** (colormaps `infinity`/`grayscale` —
-ADR-0036/D-0053), **B-0016** (legend sci-notation — D-0052), **B-0013** (visual polish — D-0049;
-ADR-0034/D-0050; ADR-0035/D-0051).
+release** (journaled **D-0054**; no ADR). The repo is now **public** at
+**github.com/steubengineer/imaginaryVolumes** (MIT detected), and the README carries an example
+render (`docs/images/example.png` — the wfbig6 electron–hole wavefunction with inline-LaTeX labels).
+Earlier: **B-0017** (colormaps `infinity`/`grayscale` — ADR-0036/D-0053), **B-0016** (legend
+sci-notation — D-0052), **B-0013** (visual polish — D-0049; ADR-0034/D-0050; ADR-0035/D-0051).
 
 ## Current State
 The library does the full job end to end: ingest a complex field (`std::complex<float|
@@ -58,9 +60,19 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 **Nothing in flight.** **Published to public GitHub** (2026-08-14):
 **https://github.com/steubengineer/imaginaryVolumes** (PUBLIC, default branch `master`, license
 detected **MIT**). `origin` tracks it; local == remote. **B-0009 (LICENSE = MIT) RESOLVED** (D-0054)
-with `LICENSE` / `THIRD_PARTY_NOTICES.md` / `README.md`. Pre-flight was clean (secrets scan clean, no
-`/home/johns` paths, `example_data/`+`*.c64`+`build/` gitignored, all vendored deps permissive). Full
+with `LICENSE` / `THIRD_PARTY_NOTICES.md` / `README.md`, and the README now has a hero render
+(`docs/images/example.png`). Pre-flight was clean (secrets scan clean, no `/home/johns` paths in
+tracked source, `example_data/`+`*.c64`+`build/` gitignored, all vendored deps permissive). Full
 suite **1498/111**; ASan+UBSan **2/2**; isolation builds OK; viewer validation-CLEAN.
+
+**Rendering a README/example image faithful to `iv_view`:** `renderPlot` frames from the default
+`RenderParams` eye (yaw≈0.90), but `iv_view`/`makePlot` opens from the **`OrbitCamera` home** (yaw
+0.7, pitch 0.5) — different angles. To reproduce the viewer's opening view headlessly, a scratch
+driver (link `iv_text`) must mirror makePlot: seed `p.eye/target/up` from `OrbitCamera{}` with
+`setDistance(4.0)` (the legend distance) + `imageShiftNdcX = -0.25`, build the overlay via
+`buildAnnotations` → `placeLegendRight(…, magnitudeValueReservePx(…))` → `buildLegend` → `finish`,
+then `Renderer::render(vol, w, h, p, &ov)` and write a PNG. The in-repo PNG writer barely compresses
+(a 1600² frame is ~10 MB) — recompress losslessly (`convert -define png:compression-level=9`, ~0.3 MB).
 
 ## Next Action
 Public release done; `origin` = **github.com/steubengineer/imaginaryVolumes** (push with

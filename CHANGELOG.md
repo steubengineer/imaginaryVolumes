@@ -13,10 +13,12 @@ Declare the project's license ahead of publishing to public GitHub (no code chan
   a free choice; MIT for maximal adoption.
 - **`THIRD_PARTY_NOTICES.md`** — collates the bundled components and their in-repo license texts.
 - **`README.md`** — top-level overview, requirements, build, usage (facade + `iv_view`), layout, and
-  license for the public repo.
+  license for the public repo, plus a **hero render** (`docs/images/example.png`) of the wfbig6
+  electron–hole wavefunction with inline-LaTeX labels, reproducing the `iv_view` opening view.
 
-Journaled as **D-0054**; resolves **B-0009**. No tests affected (docs/text only); the tree still
-builds and passes (full suite 1498/111).
+Published to **github.com/steubengineer/imaginaryVolumes** (public, MIT). Journaled as **D-0054**;
+resolves **B-0009**. No tests affected (docs/assets only); the tree still builds and passes (full
+suite 1498/111).
 
 ## Post-M9 — Additive cyclic colormaps: `infinity` + `grayscale` (B-0017, ADR-0036, D-0053)
 

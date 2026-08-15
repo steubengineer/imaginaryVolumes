@@ -55,25 +55,16 @@ each). Each is **150³**, x-fastest, so: `iv_view --input example_data/wf1.c64 -
 150` (add `--decades`/`--density` to taste). Good real datasets for eyeballing the legend.
 
 ## In Flight (work started, not finished)
-**Public GitHub release in progress.** **B-0009 (LICENSE = MIT) is RESOLVED** (D-0054): `LICENSE`,
-`THIRD_PARTY_NOTICES.md`, `README.md` added. **Remaining step: push to public GitHub** — BLOCKED on
-`gh` re-auth (the stored token for `steubengineer` is invalid; run `gh auth login -h github.com`).
-No remote is configured yet. Pre-flight done: secrets/keys scan clean, no `/home/johns` paths in
-tracked source, `example_data/`+`*.c64` gitignored, all vendored deps permissive. Full suite
-**1498/111**; ASan+UBSan **2/2**; isolation builds OK; viewer validation-CLEAN.
+**Nothing in flight.** **Published to public GitHub** (2026-08-14):
+**https://github.com/steubengineer/imaginaryVolumes** (PUBLIC, default branch `master`, license
+detected **MIT**). `origin` tracks it; local == remote. **B-0009 (LICENSE = MIT) RESOLVED** (D-0054)
+with `LICENSE` / `THIRD_PARTY_NOTICES.md` / `README.md`. Pre-flight was clean (secrets scan clean, no
+`/home/johns` paths, `example_data/`+`*.c64`+`build/` gitignored, all vendored deps permissive). Full
+suite **1498/111**; ASan+UBSan **2/2**; isolation builds OK; viewer validation-CLEAN.
 
 ## Next Action
-**Publish to public GitHub** (B-0009 done; this is the last requested step). Needs `gh` re-auth first
-(`gh auth login -h github.com` as `steubengineer`). Then, from the repo root:
-```sh
-git add -A && git commit    # commit the LICENSE/README/notices + doc updates
-gh repo create imaginaryVolumes --public --source=. --remote=origin --push
-```
-(or, without `gh`: create the empty repo on github.com, then `git remote add origin <url>` and
-`git push -u origin master`). Default branch is **master**. After pushing, sanity-check that
-`example_data/`/`*.c64` and `build/` did not upload (they're gitignored).
-
-Then the remaining open backlog (no item in progress):
+Public release done; `origin` = **github.com/steubengineer/imaginaryVolumes** (push with
+`git push origin master`). Remaining open backlog (no item in progress):
 - **B-0005 — generic/caller-supplied colormaps.** Now the *generalization* of B-0017: a runtime API
   for caller-supplied LUTs (vs the committed maps ADR-0036 added). Would extend ADR-0014/0036; adding
   another *committed* cyclic map is already generator + data only (`tools/colormaps/<name>.csv` + a
